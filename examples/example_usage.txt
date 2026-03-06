@@ -1,0 +1,116 @@
+==============================================================
+  BitReaper v1.0 - Example Usage Scenarios
+==============================================================
+
+All examples assume you are running bitreaper.bat as Administrator.
+
+--------------------------------------------------------------
+SCENARIO 1: Securely delete a single sensitive file
+--------------------------------------------------------------
+
+  Launch: Right-click bitreaper.bat -> Run as administrator
+
+  Menu selection: 1
+
+  Prompt:
+    Enter full path to the file: C:\Users\Alice\Documents\tax_2023.xlsx
+
+  Confirmation:
+    Type YES to continue: YES
+
+  Expected output:
+    [+] Deleting file...
+    [+] Overwriting free sectors in: C:\Users\Alice\Documents\
+    [✓] File securely deleted: C:\Users\Alice\Documents\tax_2023.xlsx
+
+  Log entry written to logs\bitreaper.log:
+    [2024-05-20 09:12:05] ACTION="SECURE_DELETE_FILE" TARGET="C:\Users\Alice\Documents\tax_2023.xlsx"
+
+--------------------------------------------------------------
+SCENARIO 2: Securely delete a project folder
+--------------------------------------------------------------
+
+  Menu selection: 2
+
+  Prompt:
+    Enter full path to the folder: C:\Projects\ClientData
+
+  Confirmation:
+    Type YES to continue: YES
+
+  Expected output:
+    [+] Recursively deleting files in: C:\Projects\ClientData
+    [+] Removing folder tree...
+    [+] Overwriting free sectors in: C:\Projects\
+    [✓] Folder securely deleted: C:\Projects\ClientData
+
+--------------------------------------------------------------
+SCENARIO 3: Wipe free space on drive D:
+--------------------------------------------------------------
+
+  Menu selection: 3
+
+  Prompt:
+    Drive letter (letter only, no colon): D
+
+  Confirmation:
+    Type YES to continue: YES
+
+  Expected output:
+    [+] Overwriting free sectors on D: ...
+        (This may take several minutes on large drives...)
+    [✓] Free space wiped on drive D:
+
+  Note: On a 1 TB HDD with 500 GB free, this step can take
+  30-60 minutes. On an SSD it will be faster but cannot
+  guarantee all NAND cells are overwritten.
+
+--------------------------------------------------------------
+SCENARIO 4: Quick secure cleanup (file + drive wipe)
+--------------------------------------------------------------
+
+  Menu selection: 4
+
+  Prompt:
+    Enter full path to the file: C:\Temp\dump.bin
+
+  Confirmation:
+    Type YES to continue: YES
+
+  Expected output:
+    [+] Deleting file...
+    [+] Overwriting free sectors on C: ...
+        (This may take several minutes on large drives...)
+    [✓] Quick cleanup completed for: C:\Temp\dump.bin
+
+--------------------------------------------------------------
+SCENARIO 5: Prepare a drive for reuse (manual steps)
+--------------------------------------------------------------
+
+  Step 1 — Delete all files on the drive:
+    Use Option 2 for each top-level folder, or run from
+    an elevated Command Prompt:
+      del /f /s /q D:\*
+      rd /s /q D:\FolderName
+
+  Step 2 — Wipe free space:
+    Use Option 3 and enter D
+
+  Step 3 (optional) — Delete Volume Shadow Copies:
+    Open an elevated Command Prompt and run:
+      vssadmin delete shadows /for=D: /all /quiet
+
+==============================================================
+  NOTES
+==============================================================
+
+* Always run bitreaper.bat as Administrator so that
+  cipher /w can access all unallocated clusters.
+
+* On SSDs, sector-level overwriting is not guaranteed due
+  to NAND wear-levelling. See docs/security.md for details.
+
+* The log file is located at: logs\bitreaper.log
+  (relative to the script directory).
+
+==============================================================
