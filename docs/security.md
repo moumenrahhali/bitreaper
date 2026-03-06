@@ -55,13 +55,21 @@ On **solid-state drives**, the storage controller remaps sectors transparently. 
 
 ### File System Snapshots (VSS)
 
-Windows **Volume Shadow Copy Service (VSS)** may retain previous versions of files. BitReaper does not delete shadow copies. To remove them manually:
+Windows **Volume Shadow Copy Service (VSS)** may retain previous versions of files. BitReaper does not delete shadow copies automatically in Options 1–4. **Use Option 6 to delete VSS shadows** before wiping free space if data recovery via "Previous Versions" is a concern.
+
+**Recommended secure-delete workflow:**
+
+```
+1. Delete files/folders     →  Option 1 or 2
+2. Delete VSS shadows       →  Option 6  (bitreaper.bat /delete-vss <letter> /confirmed)
+3. Wipe free space          →  Option 3  (bitreaper.bat /wipe-drive <letter> /confirmed)
+```
+
+To remove VSS shadows manually from an elevated Command Prompt:
 
 ```cmd
 vssadmin delete shadows /for=C: /all /quiet
 ```
-
-Run this command as Administrator before performing a free-space wipe if VSS recovery is a concern.
 
 ### Encrypted File System (EFS)
 
@@ -75,9 +83,9 @@ If a file is protected by **Windows EFS**, deleting it removes the ciphertext bu
 |---|---|
 | No SSD guarantee | NAND wear-levelling makes sector-level overwrites unreliable on SSDs (applies to both `cipher /w` and `diskpart clean all`) |
 | NTFS metadata | Filename and timestamps may persist in the MFT / journal (Options 1–4 only; Option 5 erases the entire disk) |
-| VSS snapshots | Shadow copies are not deleted automatically (Options 1–4 only; Option 5 removes all partitions) |
-| Network drives | `cipher /w` behaviour on mapped network drives varies by server OS |
-| Elevated rights | Without Administrator privileges, `cipher /w` may skip system-owned clusters and `diskpart` will not run |
+| VSS snapshots | Shadow copies are **not** deleted automatically by Options 1–4; use Option 6 explicitly before wiping free space |
+| Network drives | `cipher /w` behaviour on mapped network drives varies by server OS; BitReaper warns when a network path is detected |
+| Elevated rights | Without Administrator privileges the script exits immediately at startup |
 | System disk | Option 5 refuses to wipe the disk containing the Windows system drive for safety |
 
 ---
@@ -85,16 +93,19 @@ If a file is protected by **Windows EFS**, deleting it removes the ciphertext bu
 ## Recommendations
 
 1. **Encrypt first, delete later** — storing data on an encrypted volume means deletion is equivalent to key destruction.
-2. **Run as Administrator** — ensures `cipher /w` can reach all free clusters and `diskpart` can run.
-3. **Delete VSS shadows** before wiping free space on critical volumes.
+2. **Run as Administrator** — BitReaper enforces this at startup; `cipher /w` requires it to reach all free clusters, and `diskpart` will not run without it.
+3. **Delete VSS shadows first** — use Option 6 before wiping free space on critical volumes to eliminate restore-point recovery paths.
 4. **For full disk sanitisation** — use Option 5 (Full Disk Wipe) to zero every sector and remove all partitions. This leaves the disk blank and unusable.
 5. **For SSDs** — use the drive manufacturer's secure-erase utility or rely on full-disk encryption. `diskpart clean all` provides reasonable assurance but cannot overcome hardware-level wear-levelling.
 6. **Physical destruction** — for the highest assurance (decommissioned hardware), degaussing or physical shredding is the only guaranteed method.
+7. **Audit the log** — use `bitreaper.bat /view-log` or open `logs/bitreaper.log` in a text editor. Each entry includes session ID, username, and hostname for full traceability.
 
 ---
 
 ## References
 
 - [Microsoft Docs — cipher](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/cipher)
+- [Microsoft Docs — vssadmin delete shadows](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/vssadmin-delete-shadows)
 - [NIST SP 800-88 — Guidelines for Media Sanitization](https://csrc.nist.gov/publications/detail/sp/800-88/rev-1/final)
 - [DoD 5220.22-M National Industrial Security Program Operating Manual](https://www.esd.whs.mil/Portals/54/Documents/DD/issuances/dodm/522022M.pdf)
+
