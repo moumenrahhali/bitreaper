@@ -644,23 +644,15 @@ goto :main
     )
 
     :: Identify the system disk (the disk containing the Windows boot partition)
-    for /f "tokens=*" %%A in ('wmic os get SystemDrive /value 2^>nul ^| find "="') do set "%%A"
-    if defined SystemDrive (
-        set "SYS_DRIVE_LETTER=!SystemDrive:~0,1!"
-    ) else (
-        set "SYS_DRIVE_LETTER=C"
-    )
+    :: %SystemDrive% is a built-in Windows environment variable (e.g. C:)
+    set "SYS_DRIVE_LETTER=%SystemDrive:~0,1%"
+    if "!SYS_DRIVE_LETTER!"=="" set "SYS_DRIVE_LETTER=C"
 
-    :: Resolve the system drive letter to a physical disk number to protect it
+    :: Resolve the system drive letter to a physical disk number to protect it.
+    :: Use PowerShell Get-Partition which correctly handles the long WMI strings
+    :: that confuse a simple for /f token split on wmic two-column output.
     set "SYS_DISK_NUM="
-    for /f "skip=1 tokens=1,2" %%A in ('wmic path Win32_LogicalDiskToPartition get Antecedent^,Dependent 2^>nul') do (
-        echo %%B | findstr /i "!SYS_DRIVE_LETTER!:" >nul 2>&1
-        if not errorlevel 1 (
-            for /f "tokens=2 delims=#" %%X in ("%%A") do (
-                for /f "tokens=1 delims=," %%Y in ("%%X") do set "SYS_DISK_NUM=%%Y"
-            )
-        )
-    )
+    for /f %%D in ('powershell -NoProfile -NonInteractive -Command "(Get-Partition -DriveLetter !SYS_DRIVE_LETTER! -ErrorAction SilentlyContinue).DiskNumber" 2^>nul') do set "SYS_DISK_NUM=%%D"
 
     if "!CLI_MODE!"=="0" (
         :: List available disks using diskpart
