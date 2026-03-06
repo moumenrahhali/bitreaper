@@ -93,7 +93,7 @@ goto :main
 :log_entry
     set "LOG_ACTION=%~1"
     set "LOG_TARGET=%~2"
-    for /f "tokens=1-2 delims= " %%a in ('wmic os get localdatetime /value ^| find "="') do set "DT=%%b"
+    for /f "tokens=2 delims==" %%a in ('wmic os get localdatetime /value ^| find "="') do set "DT=%%a"
     set "TIMESTAMP=!DT:~0,4!-!DT:~4,2!-!DT:~6,2! !DT:~8,2!:!DT:~10,2!:!DT:~12,2!"
     echo [!TIMESTAMP!] SESSION="!SESSION_ID!" USER="!RUN_USER!" ACTION="!LOG_ACTION!" TARGET="!LOG_TARGET!" >> "!LOGFILE!"
     goto :eof
@@ -192,6 +192,7 @@ goto :main
     echo  %RED%╚══════════════════════════════════════════════════════════╝%RESET%
     echo.
     set "CONFIRMED=0"
+    set "CONFIRM="
     set /p "CONFIRM=  Type YES to continue (anything else cancels): "
     if /i "!CONFIRM!"=="YES" set "CONFIRMED=1"
     goto :eof
@@ -282,6 +283,7 @@ goto :main
         echo.
         echo  %BOLD%%WHITE%[ Secure File Delete ]%RESET%
         echo.
+        set "FILE_PATH="
         set /p "FILE_PATH=  Enter full path to the file: "
         set "FILE_PATH=!FILE_PATH:"=!"
     ) else (
@@ -371,6 +373,7 @@ goto :main
         echo.
         echo  %BOLD%%WHITE%[ Secure Folder Delete ]%RESET%
         echo.
+        set "FOLDER_PATH="
         set /p "FOLDER_PATH=  Enter full path to the folder: "
         set "FOLDER_PATH=!FOLDER_PATH:"=!"
     ) else (
@@ -404,6 +407,15 @@ goto :main
     :: Safety: prevent wiping drive root
     set "LAST_CHAR=!FOLDER_PATH:~-1!"
     if "!LAST_CHAR!"=="\" (
+        echo.
+        echo  %RED%[!] Refusing to wipe a drive root path for safety.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FOLDER_ERROR" "Drive root refused: !FOLDER_PATH!" & exit /b 1 )
+        timeout /t 3 /nobreak >nul
+        goto :main
+    )
+    :: Also catch bare drive letter with colon (e.g. "C:")
+    echo !FOLDER_PATH! | findstr /r "^[A-Za-z]:$" >nul 2>&1
+    if not errorlevel 1 (
         echo.
         echo  %RED%[!] Refusing to wipe a drive root path for safety.%RESET%
         if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FOLDER_ERROR" "Drive root refused: !FOLDER_PATH!" & exit /b 1 )
@@ -471,6 +483,7 @@ goto :main
         echo  %WHITE%  Enter the drive letter you want to wipe free space on.%RESET%
         echo  %WHITE%  Example: C%RESET%
         echo.
+        set "DRIVE_LETTER="
         set /p "DRIVE_LETTER=  Drive letter (letter only, no colon): "
     ) else (
         set "DRIVE_LETTER=!CLI_ARG1!"
@@ -534,6 +547,7 @@ goto :main
         echo.
         echo  %WHITE%  This will securely delete a file AND wipe free space on its drive.%RESET%
         echo.
+        set "FILE_PATH="
         set /p "FILE_PATH=  Enter full path to the file: "
         set "FILE_PATH=!FILE_PATH:"=!"
     ) else (
@@ -667,6 +681,7 @@ goto :main
         echo.
 
         :: Prompt for disk number
+        set "DISK_NUM="
         set /p "DISK_NUM=  Enter the disk number to wipe (e.g. 1): "
     ) else (
         set "DISK_NUM=!CLI_ARG1!"
@@ -709,6 +724,7 @@ goto :main
         echo  %RED%╚══════════════════════════════════════════════════════════════╝%RESET%
         echo.
         set "CONFIRMED=0"
+        set "CONFIRM="
         set /p "CONFIRM=  Type YES to continue (anything else cancels): "
         if /i not "!CONFIRM!"=="YES" (
             echo  %YELLOW%[!] Operation cancelled.%RESET%
@@ -717,6 +733,7 @@ goto :main
         )
         :: Second confirmation — require the user to re-type the disk number
         echo.
+        set "CONFIRM_NUM="
         set /p "CONFIRM_NUM=  Re-enter the disk number to confirm: "
         if not "!CONFIRM_NUM!"=="!DISK_NUM!" (
             echo.
@@ -794,6 +811,7 @@ goto :main
         echo.
         call :list_drives
         echo.
+        set "DRIVE_LETTER="
         set /p "DRIVE_LETTER=  Drive letter (letter only, no colon): "
     ) else (
         set "DRIVE_LETTER=!CLI_ARG1!"
