@@ -1,5 +1,20 @@
 # BitReaper – Security Notes
 
+## How `diskpart clean all` Works
+
+`diskpart clean all` is a built-in Windows command that writes **zeros to every sector** on a selected disk. Unlike `cipher /w`, which only targets free space, `clean all` overwrites the entire disk surface including:
+
+- All file data (allocated and unallocated)
+- All partitions and partition tables
+- All filesystem metadata (MFT, journals, boot records)
+- All Volume Shadow Copies
+
+After `clean all` completes, the disk is left in a **raw, uninitialized state** with no partitions and no filesystem. It will appear as "Not Initialized" in Windows Disk Management and cannot be used until it is re-initialized (MBR or GPT) and new volumes are created and formatted.
+
+> **Important:** `diskpart clean all` performs a single zero-pass overwrite. For HDDs, this is sufficient to prevent software-based recovery. For the highest assurance on HDDs, physical destruction remains the gold standard.
+
+---
+
 ## How `cipher /w` Works
 
 `cipher /w` is a built-in Windows command that overwrites **unallocated disk clusters** (free space) to prevent recovery of previously deleted data.
@@ -34,6 +49,7 @@ For highly sensitive scenarios, consider:
 On **solid-state drives**, the storage controller remaps sectors transparently. This means:
 
 - `cipher /w` may not reach every physical NAND cell that held the original data.
+- `diskpart clean all` writes zeros sector-by-sector, but the SSD controller may still retain copies in remapped or over-provisioned cells not visible to the OS.
 - The SSD's internal wear-levelling may preserve copies in cells not visible to the OS.
 - For SSDs, the most reliable sanitisation method is **ATA Secure Erase** (via the manufacturer's tool or `hdparm` under Linux), or full-drive encryption before first use.
 
@@ -57,21 +73,23 @@ If a file is protected by **Windows EFS**, deleting it removes the ciphertext bu
 
 | Limitation | Explanation |
 |---|---|
-| No SSD guarantee | NAND wear-levelling makes sector-level overwrites unreliable on SSDs |
-| NTFS metadata | Filename and timestamps may persist in the MFT / journal |
-| VSS snapshots | Shadow copies are not deleted automatically |
+| No SSD guarantee | NAND wear-levelling makes sector-level overwrites unreliable on SSDs (applies to both `cipher /w` and `diskpart clean all`) |
+| NTFS metadata | Filename and timestamps may persist in the MFT / journal (Options 1–4 only; Option 5 erases the entire disk) |
+| VSS snapshots | Shadow copies are not deleted automatically (Options 1–4 only; Option 5 removes all partitions) |
 | Network drives | `cipher /w` behaviour on mapped network drives varies by server OS |
-| Elevated rights | Without Administrator privileges, `cipher /w` may skip system-owned clusters |
+| Elevated rights | Without Administrator privileges, `cipher /w` may skip system-owned clusters and `diskpart` will not run |
+| System disk | Option 5 refuses to wipe the disk containing the Windows system drive for safety |
 
 ---
 
 ## Recommendations
 
 1. **Encrypt first, delete later** — storing data on an encrypted volume means deletion is equivalent to key destruction.
-2. **Run as Administrator** — ensures `cipher /w` can reach all free clusters.
+2. **Run as Administrator** — ensures `cipher /w` can reach all free clusters and `diskpart` can run.
 3. **Delete VSS shadows** before wiping free space on critical volumes.
-4. **For SSDs** — use the drive manufacturer's secure-erase utility or rely on full-disk encryption.
-5. **Physical destruction** — for the highest assurance (decommissioned hardware), degaussing or physical shredding is the only guaranteed method.
+4. **For full disk sanitisation** — use Option 5 (Full Disk Wipe) to zero every sector and remove all partitions. This leaves the disk blank and unusable.
+5. **For SSDs** — use the drive manufacturer's secure-erase utility or rely on full-disk encryption. `diskpart clean all` provides reasonable assurance but cannot overcome hardware-level wear-levelling.
+6. **Physical destruction** — for the highest assurance (decommissioned hardware), degaussing or physical shredding is the only guaranteed method.
 
 ---
 

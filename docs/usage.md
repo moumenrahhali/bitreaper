@@ -32,7 +32,7 @@ bitreaper.bat
  ██████╔╝██║   ██║   ██║  ██║███████╗██║  ██║██║  ██║███████╗
  ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝
 
- BitReaper v1.0  |  Secure Windows Data Eraser
+ BitReaper v1.1  |  Secure Windows Data Eraser
  ================================================================
 
   Select an operation:
@@ -41,7 +41,8 @@ bitreaper.bat
    2 -  Securely delete a folder
    3 -  Wipe free disk space
    4 -  Quick secure cleanup (file + free space)
-   5 -  Exit
+   5 -  Full disk wipe (zero-fill entire disk)
+   6 -  Exit
 ```
 
 ---
@@ -122,6 +123,70 @@ Type YES to continue: YES
 ## Option 4 — Quick Secure Cleanup
 
 Combines Option 1 (delete a file) and Option 3 (wipe free space on the same drive) in a single workflow.
+
+---
+
+## Option 5 — Full Disk Wipe (Zero-Fill Entire Disk)
+
+**What it does:**
+
+1. Lists all physical disks attached to the machine.
+2. Identifies and protects the system disk (the disk containing Windows).
+3. Prompts for the disk number to wipe.
+4. Requires a double confirmation: type `YES`, then re-enter the disk number.
+5. Runs `diskpart clean all` on the selected disk — this writes zeros to **every sector**, removes all partitions, and leaves the disk completely blank and unusable.
+
+**Commands used:**
+
+- `diskpart` with `select disk <N>` and `clean all`
+
+**After completion:**
+
+- The disk will have no partitions, no filesystem, and no data.
+- It will appear as "Not Initialized" in Windows Disk Management.
+- To reuse the disk, you must initialise it (MBR or GPT) and create new partitions.
+
+**Example session:**
+
+```
+[ Full Disk Wipe — Zero-Fill Entire Disk ]
+
+  Available disks:
+  ─────────────────────────────────────────────────────────────
+
+  Disk 0    Online       238 GB  0 B
+  Disk 1    Online       931 GB  0 B
+
+  ─────────────────────────────────────────────────────────────
+  ⚠  Disk 0 contains your system drive (C:) and is PROTECTED.
+
+  Enter the disk number to wipe (e.g. 1): 1
+
+  Target: Disk 1
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║                  ⚠  FINAL WARNING  ⚠                       ║
+  ║  ALL data on Disk 1 will be PERMANENTLY DESTROYED.          ║
+  ║  Every sector will be overwritten with zeros.               ║
+  ║  All partitions will be removed.                            ║
+  ║  The disk will be left UNUSABLE until re-initialised.       ║
+  ║  This action CANNOT be undone.                              ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  Type YES to continue: YES
+
+  Re-enter the disk number to confirm: 1
+
+[+] Starting full disk wipe on Disk 1...
+    Writing zeros to every sector. This may take a VERY long time
+    depending on disk size (hours for large HDDs).
+
+[✓] Full disk wipe completed on Disk 1.
+    All sectors zeroed. All partitions removed.
+    The disk is now blank and unusable until re-initialised.
+```
+
+> **Note:** `diskpart clean all` writes zeros to every sector. On a 1 TB HDD this can take 2–4 hours. On an SSD it will be faster but wear-levelling limitations still apply (see [security.md](security.md)).
 
 ---
 
