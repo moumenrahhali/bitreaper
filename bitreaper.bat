@@ -412,14 +412,9 @@ goto :main
         )
     )
 
-    :: List available disks
+    :: List available disks using diskpart
     echo  %WHITE%  Available disks:%RESET%
     echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
-    echo.
-    for /f "skip=1 tokens=1-4" %%A in ('wmic diskdrive get Index^,Model^,Size^,Status /value 2^>nul ^| findstr /r "."') do (
-        echo   %%A
-    )
-    :: Use diskpart list disk for a cleaner view
     echo.
     set "DP_LIST=%TEMP%\bitreaper_listdisk.txt"
     (echo list disk) > "!DP_LIST!"
@@ -463,7 +458,7 @@ goto :main
     echo.
     echo  %RED%╔══════════════════════════════════════════════════════════════╗%RESET%
     echo  %RED%║                  ⚠  FINAL WARNING  ⚠                       ║%RESET%
-    echo  %RED%║  ALL data on Disk !DISK_NUM! will be PERMANENTLY DESTROYED.        ║%RESET%
+    echo  %RED%║  ALL data on the selected disk will be DESTROYED.           ║%RESET%
     echo  %RED%║  Every sector will be overwritten with zeros.               ║%RESET%
     echo  %RED%║  All partitions will be removed.                            ║%RESET%
     echo  %RED%║  The disk will be left UNUSABLE until re-initialised.       ║%RESET%
