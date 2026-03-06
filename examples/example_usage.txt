@@ -1,5 +1,5 @@
 ==============================================================
-  BitReaper v1.1 - Example Usage Scenarios
+  BitReaper v2.0 - Example Usage Scenarios
 ==============================================================
 
 All examples assume you are running bitreaper.bat as Administrator.
@@ -15,6 +15,10 @@ SCENARIO 1: Securely delete a single sensitive file
   Prompt:
     Enter full path to the file: C:\Users\Alice\Documents\tax_2023.xlsx
 
+  Pre-confirmation display:
+    Target: C:\Users\Alice\Documents\tax_2023.xlsx
+    Size  : 48640 bytes
+
   Confirmation:
     Type YES to continue: YES
 
@@ -24,7 +28,7 @@ SCENARIO 1: Securely delete a single sensitive file
     [✓] File securely deleted: C:\Users\Alice\Documents\tax_2023.xlsx
 
   Log entry written to logs\bitreaper.log:
-    [2024-05-20 09:12:05] ACTION="SECURE_DELETE_FILE" TARGET="C:\Users\Alice\Documents\tax_2023.xlsx"
+    [2025-06-01 09:12:18] SESSION="4f3a9c01" USER="Alice" ACTION="SECURE_DELETE_FILE" TARGET="C:\Users\Alice\Documents\tax_2023.xlsx"
 
 --------------------------------------------------------------
 SCENARIO 2: Securely delete a project folder
@@ -43,6 +47,9 @@ SCENARIO 2: Securely delete a project folder
     [+] Removing folder tree...
     [+] Overwriting free sectors in: C:\Projects\
     [✓] Folder securely deleted: C:\Projects\ClientData
+
+  Log entry:
+    [2025-06-01 09:14:05] SESSION="4f3a9c01" USER="Alice" ACTION="SECURE_DELETE_FOLDER" TARGET="C:\Projects\ClientData"
 
 --------------------------------------------------------------
 SCENARIO 3: Wipe free space on drive D:
@@ -118,16 +125,102 @@ SCENARIO 5: Full disk wipe — zero-fill and destroy a disk
         All sectors zeroed. All partitions removed.
         The disk is now blank and unusable until re-initialised.
 
-  Log entry written to logs\bitreaper.log:
-    [2024-05-20 10:05:00] ACTION="FULL_DISK_WIPE_START" TARGET="Disk 1"
-    [2024-05-20 12:31:44] ACTION="FULL_DISK_WIPE_COMPLETE" TARGET="Disk 1"
+  Log entries written to logs\bitreaper.log:
+    [2025-06-01 10:05:00] SESSION="4f3a9c01" USER="Alice" ACTION="FULL_DISK_WIPE_START" TARGET="Disk 1"
+    [2025-06-01 12:31:44] SESSION="4f3a9c01" USER="Alice" ACTION="FULL_DISK_WIPE_COMPLETE" TARGET="Disk 1"
 
   Note: On a 1 TB HDD, the clean all operation can take 2-4
   hours. On SSDs it will be faster but NAND wear-levelling
   means some cells may not be overwritten. See docs/security.md.
 
 --------------------------------------------------------------
-SCENARIO 6: Prepare a drive for reuse (manual steps)
+SCENARIO 6: Delete VSS shadows before wiping free space
+--------------------------------------------------------------
+
+  Before wiping free space, delete Volume Shadow Copies to
+  ensure "Previous Versions" restore points cannot be used
+  to recover deleted files.
+
+  Menu selection: 6
+
+  Prompt:
+    Drive letter (letter only, no colon): C
+
+  Confirmation:
+    Type YES to continue: YES
+
+  Expected output:
+    [+] Deleting all Volume Shadow Copies on C: ...
+    [✓] All shadow copies deleted on C:
+
+  Then proceed to wipe free space (Option 3):
+  Menu selection: 3 -> Drive letter: C -> YES
+
+  Log entries:
+    [2025-06-01 09:30:00] SESSION="4f3a9c01" USER="Alice" ACTION="DELETE_VSS" TARGET="C:"
+    [2025-06-01 09:30:05] SESSION="4f3a9c01" USER="Alice" ACTION="WIPE_FREE_SPACE" TARGET="C:"
+
+--------------------------------------------------------------
+SCENARIO 7: View the audit log
+--------------------------------------------------------------
+
+  Menu selection: 7
+
+  Expected output:
+    [ Audit Log ]
+
+    Log file: C:\Tools\BitReaper\logs\bitreaper.log
+    ─────────────────────────────────────────────────────────────
+
+    [2025-06-01 09:12:05] SESSION="4f3a9c01" USER="Alice" ACTION="SESSION_START" ...
+    [2025-06-01 09:12:18] SESSION="4f3a9c01" USER="Alice" ACTION="SECURE_DELETE_FILE" ...
+    ...
+
+  Also available from the command line (no interaction required):
+    bitreaper.bat /view-log
+
+--------------------------------------------------------------
+SCENARIO 8: Scripted / automated use (CLI mode)
+--------------------------------------------------------------
+
+  BitReaper v2.0 supports non-interactive command-line arguments
+  for scheduled tasks and automation pipelines.
+
+  All CLI operations:
+  - Require Administrator privileges
+  - Accept /confirmed to skip the interactive YES prompt
+  - Return exit code 0 on success, 1 on failure
+
+  Examples:
+
+    :: Silently delete a file (no prompt, no pause)
+    bitreaper.bat /delete-file "C:\Temp\secret.bin" /confirmed
+
+    :: Wipe free space on D: without interaction
+    bitreaper.bat /wipe-drive D /confirmed
+
+    :: Full secure delete pipeline for drive C: (scheduled task)
+    bitreaper.bat /delete-vss   C /confirmed
+    bitreaper.bat /wipe-drive   C /confirmed
+
+    :: Full disk wipe on Disk 2 (requires /confirmed)
+    bitreaper.bat /full-disk 2 /confirmed
+
+    :: View the audit log (read-only, no /confirmed needed)
+    bitreaper.bat /view-log
+
+    :: Display CLI help
+    bitreaper.bat /help
+
+  PowerShell example (check exit code):
+
+    & bitreaper.bat /delete-file "C:\Temp\secret.bin" /confirmed
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "BitReaper failed with exit code $LASTEXITCODE"
+    }
+
+--------------------------------------------------------------
+SCENARIO 9: Prepare a drive for reuse (full pipeline)
 --------------------------------------------------------------
 
   Step 1 — Delete all files on the drive:
@@ -136,24 +229,39 @@ SCENARIO 6: Prepare a drive for reuse (manual steps)
       del /f /s /q D:\*
       rd /s /q D:\FolderName
 
-  Step 2 — Wipe free space:
-    Use Option 3 and enter D
+  Step 2 — Delete Volume Shadow Copies:
+    Use Option 6 and enter D
+    (or: bitreaper.bat /delete-vss D /confirmed)
 
-  Step 3 (optional) — Delete Volume Shadow Copies:
-    Open an elevated Command Prompt and run:
-      vssadmin delete shadows /for=D: /all /quiet
+  Step 3 — Wipe free space:
+    Use Option 3 and enter D
+    (or: bitreaper.bat /wipe-drive D /confirmed)
+
+  Full scripted version:
+    bitreaper.bat /delete-vss  D /confirmed
+    bitreaper.bat /wipe-drive  D /confirmed
 
 ==============================================================
   NOTES
 ==============================================================
 
 * Always run bitreaper.bat as Administrator so that
-  cipher /w can access all unallocated clusters.
+  cipher /w can access all unallocated clusters and
+  vssadmin can delete shadow copies.
 
 * On SSDs, sector-level overwriting is not guaranteed due
   to NAND wear-levelling. See docs/security.md for details.
 
 * The log file is located at: logs\bitreaper.log
-  (relative to the script directory).
+  (relative to the script directory). Each entry includes
+  session ID, username, and hostname for full traceability.
+
+* Log files rotate automatically when they exceed 1 MB.
+  Up to 3 archived copies are kept (.log.1, .log.2, .log.3).
+
+* The /confirmed flag skips the interactive YES prompt.
+  Use it only in controlled, scripted environments where
+  the target path/disk has already been verified.
 
 ==============================================================
+

@@ -2,20 +2,25 @@
 setlocal EnableDelayedExpansion
 
 :: ============================================================
-::  BitReaper v1.1 - Secure Windows Data Eraser
-::  Uses only native Windows commands (cipher, del, rd, diskpart, etc.)
-::  Compatible with Windows 10, Windows 11, Windows Server
+::  BitReaper v2.0 - Enterprise Secure Windows Data Eraser
+::  Uses only native Windows commands (cipher, del, rd, diskpart)
+::  Compatible with Windows 10, Windows 11, Windows Server 2016+
 :: ============================================================
 
-:: Initialise log directory and log file path
-if not exist "logs" mkdir logs
+:: ── Initialise log directory and log file path ───────────────
+if not exist "%~dp0logs" mkdir "%~dp0logs"
 set "LOGFILE=%~dp0logs\bitreaper.log"
+set "SCRIPT_VERSION=2.0"
 
-:: Enable ANSI colour support (Windows 10+)
-for /f "tokens=4-5 delims=. " %%i in ('ver') do set VERSION=%%i.%%j
+:: ── Capture session metadata ──────────────────────────────────
+set "RUN_USER=%USERNAME%"
+set "SESSION_ID=00000000%RANDOM%%RANDOM%%RANDOM%"
+set "SESSION_ID=!SESSION_ID:~-8!"
+
+:: ── Enable ANSI colour support (Windows 10+) ─────────────────
 reg add HKCU\Console /v VirtualTerminalLevel /t REG_DWORD /d 1 /f >nul 2>&1
 
-:: Colour codes (ANSI escape sequences)
+:: ── Colour codes (ANSI escape sequences) ─────────────────────
 set "RED=[91m"
 set "GREEN=[92m"
 set "YELLOW=[93m"
@@ -24,18 +29,85 @@ set "WHITE=[97m"
 set "BOLD=[1m"
 set "RESET=[0m"
 
+:: ── Administrator privilege check ────────────────────────────
+net session >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo  [ERROR] BitReaper requires Administrator privileges.
+    echo  Right-click bitreaper.bat and choose "Run as administrator".
+    echo.
+    pause
+    exit /b 1
+)
+
+:: ── Rotate log file if it exceeds 1 MB ───────────────────────
+call :rotate_log
+
+:: ── Log session start ─────────────────────────────────────────
+call :log_entry "SESSION_START" "User=!RUN_USER! Host=%COMPUTERNAME%"
+
+:: ── Parse command-line arguments ─────────────────────────────
+set "CLI_MODE=0"
+set "CLI_CONFIRMED=0"
+set "CLI_OPERATION="
+set "CLI_ARG1="
+
+if /i "%~1"=="/help"          goto :show_help
+if /i "%~1"=="/?"             goto :show_help
+if /i "%~1"=="/view-log"      ( set "CLI_MODE=1" & set "CLI_OPERATION=view_log"       & goto :cli_dispatch )
+if /i "%~1"=="/delete-file"   ( set "CLI_MODE=1" & set "CLI_OPERATION=delete_file"    & set "CLI_ARG1=%~2" )
+if /i "%~1"=="/delete-folder" ( set "CLI_MODE=1" & set "CLI_OPERATION=delete_folder"  & set "CLI_ARG1=%~2" )
+if /i "%~1"=="/wipe-drive"    ( set "CLI_MODE=1" & set "CLI_OPERATION=wipe_space"     & set "CLI_ARG1=%~2" )
+if /i "%~1"=="/quick-cleanup" ( set "CLI_MODE=1" & set "CLI_OPERATION=quick_cleanup"  & set "CLI_ARG1=%~2" )
+if /i "%~1"=="/full-disk"     ( set "CLI_MODE=1" & set "CLI_OPERATION=full_disk_wipe" & set "CLI_ARG1=%~2" )
+if /i "%~1"=="/delete-vss"    ( set "CLI_MODE=1" & set "CLI_OPERATION=delete_vss"     & set "CLI_ARG1=%~2" )
+
+:: /confirmed may appear in position 2 or 3
+if /i "%~2"=="/confirmed" set "CLI_CONFIRMED=1"
+if /i "%~3"=="/confirmed" set "CLI_CONFIRMED=1"
+
+if "!CLI_MODE!"=="1" goto :cli_dispatch
 goto :main
 
 :: ============================================================
-::  HELPER: Write a timestamped entry to the log file
+::  CLI DISPATCH – route to the requested operation handler
+:: ============================================================
+:cli_dispatch
+    if "!CLI_OPERATION!"=="delete_file"    goto :delete_file
+    if "!CLI_OPERATION!"=="delete_folder"  goto :delete_folder
+    if "!CLI_OPERATION!"=="wipe_space"     goto :wipe_space
+    if "!CLI_OPERATION!"=="quick_cleanup"  goto :quick_cleanup
+    if "!CLI_OPERATION!"=="full_disk_wipe" goto :full_disk_wipe
+    if "!CLI_OPERATION!"=="delete_vss"     goto :delete_vss
+    if "!CLI_OPERATION!"=="view_log"       goto :view_log
+    goto :show_help
+
+:: ============================================================
+::  HELPER: Write a timestamped entry to the audit log
 ::  Usage: call :log_entry "ACTION" "TARGET"
+::  Format: [YYYY-MM-DD HH:MM:SS] SESSION="id" USER="u" ACTION="a" TARGET="t"
 :: ============================================================
 :log_entry
     set "LOG_ACTION=%~1"
     set "LOG_TARGET=%~2"
     for /f "tokens=1-2 delims= " %%a in ('wmic os get localdatetime /value ^| find "="') do set "DT=%%b"
     set "TIMESTAMP=!DT:~0,4!-!DT:~4,2!-!DT:~6,2! !DT:~8,2!:!DT:~10,2!:!DT:~12,2!"
-    echo [!TIMESTAMP!] ACTION="!LOG_ACTION!" TARGET="!LOG_TARGET!" >> "!LOGFILE!"
+    echo [!TIMESTAMP!] SESSION="!SESSION_ID!" USER="!RUN_USER!" ACTION="!LOG_ACTION!" TARGET="!LOG_TARGET!" >> "!LOGFILE!"
+    goto :eof
+
+:: ============================================================
+::  HELPER: Rotate the log file when it exceeds 1 MB
+::  Keeps up to 3 archived copies: .log.1, .log.2, .log.3
+:: ============================================================
+:rotate_log
+    if not exist "!LOGFILE!" goto :eof
+    for %%F in ("!LOGFILE!") do set "LOG_SIZE=%%~zF"
+    if not defined LOG_SIZE goto :eof
+    if !LOG_SIZE! lss 1048576 goto :eof
+    if exist "!LOGFILE!.3" del /f /q "!LOGFILE!.3" >nul 2>&1
+    if exist "!LOGFILE!.2" move /y "!LOGFILE!.2" "!LOGFILE!.3" >nul 2>&1
+    if exist "!LOGFILE!.1" move /y "!LOGFILE!.1" "!LOGFILE!.2" >nul 2>&1
+    move /y "!LOGFILE!" "!LOGFILE!.1" >nul 2>&1
     goto :eof
 
 :: ============================================================
@@ -51,15 +123,22 @@ goto :main
     echo  ██████╔╝██║   ██║   ██║  ██║███████╗██║  ██║██║  ██║███████╗
     echo  ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝
     echo %RESET%
-    echo  %BOLD%%WHITE%BitReaper v1.1  ^|  Secure Windows Data Eraser%RESET%
+    echo  %BOLD%%WHITE%BitReaper v2.0  ^|  Enterprise Secure Windows Data Eraser%RESET%
+    echo  %CYAN%================================================================%RESET%
+    echo  %WHITE%  Session: !SESSION_ID!   User: !RUN_USER!   Host: %COMPUTERNAME%%RESET%
     echo  %CYAN%================================================================%RESET%
     goto :eof
 
 :: ============================================================
 ::  HELPER: Safety confirmation prompt
-::  Sets CONFIRMED=1 if the user types YES, else CONFIRMED=0
+::  In CLI mode with /confirmed, auto-approves (sets CONFIRMED=1).
+::  Otherwise prompts interactively; sets CONFIRMED=1 on YES.
 :: ============================================================
 :safety_confirm
+    if "!CLI_CONFIRMED!"=="1" (
+        set "CONFIRMED=1"
+        goto :eof
+    )
     echo.
     echo  %RED%╔══════════════════════════════════════════════════════════╗%RESET%
     echo  %RED%║                      ⚠  WARNING  ⚠                      ║%RESET%
@@ -71,6 +150,47 @@ goto :main
     set /p "CONFIRM=  Type YES to continue (anything else cancels): "
     if /i "!CONFIRM!"=="YES" set "CONFIRMED=1"
     goto :eof
+
+:: ============================================================
+::  HELPER: Display command-line usage
+:: ============================================================
+:show_help
+    echo.
+    echo  BitReaper v2.0 - Enterprise Secure Windows Data Eraser
+    echo  ================================================================
+    echo.
+    echo  USAGE:
+    echo.
+    echo    Interactive mode (no arguments):
+    echo      bitreaper.bat
+    echo.
+    echo    Automated / silent mode:
+    echo      bitreaper.bat /delete-file    ^<path^>         [/confirmed]
+    echo      bitreaper.bat /delete-folder  ^<path^>         [/confirmed]
+    echo      bitreaper.bat /wipe-drive     ^<letter^>       [/confirmed]
+    echo      bitreaper.bat /quick-cleanup  ^<path^>         [/confirmed]
+    echo      bitreaper.bat /full-disk      ^<disk-number^>  [/confirmed]
+    echo      bitreaper.bat /delete-vss     ^<letter^>       [/confirmed]
+    echo      bitreaper.bat /view-log
+    echo      bitreaper.bat /help
+    echo.
+    echo  OPTIONS:
+    echo    /confirmed   Skip the interactive YES confirmation prompt.
+    echo                 CAUTION: bypasses the safety gate. Use carefully.
+    echo.
+    echo  EXAMPLES:
+    echo    bitreaper.bat /delete-file "C:\Temp\secret.txt" /confirmed
+    echo    bitreaper.bat /wipe-drive D /confirmed
+    echo    bitreaper.bat /delete-vss C /confirmed
+    echo    bitreaper.bat /view-log
+    echo.
+    echo  NOTES:
+    echo    - All operations require Administrator privileges.
+    echo    - Every action is written to: logs\bitreaper.log
+    echo    - Log files rotate automatically when they exceed 1 MB.
+    echo    - /full-disk always requires /confirmed in CLI mode.
+    echo.
+    exit /b 0
 
 :: ============================================================
 ::  MAIN MENU
@@ -85,11 +205,13 @@ goto :main
     echo   %CYAN%3%RESET% -  Wipe free disk space
     echo   %CYAN%4%RESET% -  Quick secure cleanup (file + free space)
     echo   %CYAN%5%RESET% -  Full disk wipe (zero-fill entire disk)
-    echo   %CYAN%6%RESET% -  Exit
+    echo   %CYAN%6%RESET% -  Delete Volume Shadow Copies (VSS)
+    echo   %CYAN%7%RESET% -  View audit log
+    echo   %CYAN%8%RESET% -  Exit
     echo.
     echo  %CYAN%================================================================%RESET%
     echo.
-    choice /c 123456 /n /m "  Enter choice [1-6]: "
+    choice /c 12345678 /n /m "  Enter choice [1-8]: "
     set "MENU_CHOICE=!errorlevel!"
 
     if "!MENU_CHOICE!"=="1" goto :delete_file
@@ -97,7 +219,9 @@ goto :main
     if "!MENU_CHOICE!"=="3" goto :wipe_space
     if "!MENU_CHOICE!"=="4" goto :quick_cleanup
     if "!MENU_CHOICE!"=="5" goto :full_disk_wipe
-    if "!MENU_CHOICE!"=="6" goto :exit_tool
+    if "!MENU_CHOICE!"=="6" goto :delete_vss
+    if "!MENU_CHOICE!"=="7" goto :view_log
+    if "!MENU_CHOICE!"=="8" goto :exit_tool
 
     goto :main
 
@@ -105,17 +229,20 @@ goto :main
 ::  OPTION 1 - Secure File Delete
 :: ============================================================
 :delete_file
-    call :print_banner
-    echo.
-    echo  %BOLD%%WHITE%[ Secure File Delete ]%RESET%
-    echo.
-    set /p "FILE_PATH=  Enter full path to the file: "
-
-    :: Strip surrounding quotes if user included them
-    set "FILE_PATH=!FILE_PATH:"=!"
+    if "!CLI_MODE!"=="0" (
+        call :print_banner
+        echo.
+        echo  %BOLD%%WHITE%[ Secure File Delete ]%RESET%
+        echo.
+        set /p "FILE_PATH=  Enter full path to the file: "
+        set "FILE_PATH=!FILE_PATH:"=!"
+    ) else (
+        set "FILE_PATH=!CLI_ARG1!"
+    )
 
     if "!FILE_PATH!"=="" (
-        echo  %RED%[!] No path entered. Returning to menu.%RESET%
+        echo  %RED%[!] No path provided.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FILE_ERROR" "No path provided" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -123,6 +250,7 @@ goto :main
     if not exist "!FILE_PATH!" (
         echo.
         echo  %RED%[!] File not found: !FILE_PATH!%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FILE_ERROR" "Not found: !FILE_PATH!" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -131,28 +259,42 @@ goto :main
     if exist "!FILE_PATH!\*" (
         echo.
         echo  %RED%[!] That path is a directory. Use option 2 to delete folders.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FILE_ERROR" "Path is directory: !FILE_PATH!" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
+    )
+
+    :: Capture size and parent directory before deletion
+    for %%F in ("!FILE_PATH!") do (
+        set "FILE_SIZE=%%~zF"
+        set "FILE_DIR=%%~dpF"
     )
 
     echo.
     echo  %YELLOW%  Target: !FILE_PATH!%RESET%
+    echo  %WHITE%  Size  : !FILE_SIZE! bytes%RESET%
+
+    :: Warn if target is on a network path
+    if "!FILE_DIR:~0,2!"=="\\" (
+        echo  %YELLOW%  [!] Warning: target is on a network path. cipher /w effectiveness%RESET%
+        echo  %YELLOW%      is not guaranteed on remote or network-attached drives.%RESET%
+    )
+
     call :safety_confirm
     if "!CONFIRMED!"=="0" (
         echo  %YELLOW%[!] Operation cancelled.%RESET%
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
 
     echo.
-    :: Capture the parent directory before deletion for the cipher /w pass
-    for %%F in ("!FILE_PATH!") do set "FILE_DIR=%%~dpF"
-
     echo  %GREEN%[+] Deleting file...%RESET%
     del /f /q "!FILE_PATH!" >nul 2>&1
     if exist "!FILE_PATH!" (
         echo  %RED%[!] Failed to delete: !FILE_PATH!%RESET%
         call :log_entry "SECURE_DELETE_FILE_FAILED" "!FILE_PATH!"
+        if "!CLI_MODE!"=="1" ( exit /b 1 )
         timeout /t 3 /nobreak >nul
         goto :main
     )
@@ -165,6 +307,7 @@ goto :main
     echo  %GREEN%[✓] File securely deleted: !FILE_PATH!%RESET%
     call :log_entry "SECURE_DELETE_FILE" "!FILE_PATH!"
     echo.
+    if "!CLI_MODE!"=="1" ( exit /b 0 )
     pause
     goto :main
 
@@ -172,17 +315,20 @@ goto :main
 ::  OPTION 2 - Secure Folder Delete
 :: ============================================================
 :delete_folder
-    call :print_banner
-    echo.
-    echo  %BOLD%%WHITE%[ Secure Folder Delete ]%RESET%
-    echo.
-    set /p "FOLDER_PATH=  Enter full path to the folder: "
-
-    :: Strip surrounding quotes
-    set "FOLDER_PATH=!FOLDER_PATH:"=!"
+    if "!CLI_MODE!"=="0" (
+        call :print_banner
+        echo.
+        echo  %BOLD%%WHITE%[ Secure Folder Delete ]%RESET%
+        echo.
+        set /p "FOLDER_PATH=  Enter full path to the folder: "
+        set "FOLDER_PATH=!FOLDER_PATH:"=!"
+    ) else (
+        set "FOLDER_PATH=!CLI_ARG1!"
+    )
 
     if "!FOLDER_PATH!"=="" (
-        echo  %RED%[!] No path entered. Returning to menu.%RESET%
+        echo  %RED%[!] No path provided.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FOLDER_ERROR" "No path provided" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -190,6 +336,7 @@ goto :main
     if not exist "!FOLDER_PATH!" (
         echo.
         echo  %RED%[!] Folder not found: !FOLDER_PATH!%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FOLDER_ERROR" "Not found: !FOLDER_PATH!" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -198,15 +345,17 @@ goto :main
     if not exist "!FOLDER_PATH!\*" (
         echo.
         echo  %RED%[!] That path is a file. Use option 1 to delete files.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FOLDER_ERROR" "Path is file: !FOLDER_PATH!" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
 
     :: Safety: prevent wiping drive root
-    set "CLEANED=!FOLDER_PATH:~-1!"
-    if "!CLEANED!"=="\" (
+    set "LAST_CHAR=!FOLDER_PATH:~-1!"
+    if "!LAST_CHAR!"=="\" (
         echo.
         echo  %RED%[!] Refusing to wipe a drive root path for safety.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "SECURE_DELETE_FOLDER_ERROR" "Drive root refused: !FOLDER_PATH!" & exit /b 1 )
         timeout /t 3 /nobreak >nul
         goto :main
     )
@@ -216,6 +365,7 @@ goto :main
     call :safety_confirm
     if "!CONFIRMED!"=="0" (
         echo  %YELLOW%[!] Operation cancelled.%RESET%
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -237,10 +387,12 @@ goto :main
     if exist "!FOLDER_PATH!" (
         echo  %RED%[!] Folder could not be fully removed. Some files may be in use.%RESET%
         call :log_entry "SECURE_DELETE_FOLDER_PARTIAL" "!FOLDER_PATH!"
+        if "!CLI_MODE!"=="1" ( exit /b 1 )
     ) else (
         echo.
         echo  %GREEN%[✓] Folder securely deleted: !FOLDER_PATH!%RESET%
         call :log_entry "SECURE_DELETE_FOLDER" "!FOLDER_PATH!"
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
     )
     echo.
     pause
@@ -250,14 +402,18 @@ goto :main
 ::  OPTION 3 - Wipe Free Disk Space
 :: ============================================================
 :wipe_space
-    call :print_banner
-    echo.
-    echo  %BOLD%%WHITE%[ Wipe Free Disk Space ]%RESET%
-    echo.
-    echo  %WHITE%  Enter the drive letter you want to wipe free space on.%RESET%
-    echo  %WHITE%  Example: C%RESET%
-    echo.
-    set /p "DRIVE_LETTER=  Drive letter (letter only, no colon): "
+    if "!CLI_MODE!"=="0" (
+        call :print_banner
+        echo.
+        echo  %BOLD%%WHITE%[ Wipe Free Disk Space ]%RESET%
+        echo.
+        echo  %WHITE%  Enter the drive letter you want to wipe free space on.%RESET%
+        echo  %WHITE%  Example: C%RESET%
+        echo.
+        set /p "DRIVE_LETTER=  Drive letter (letter only, no colon): "
+    ) else (
+        set "DRIVE_LETTER=!CLI_ARG1!"
+    )
 
     :: Strip colon or backslash if user included them
     set "DRIVE_LETTER=!DRIVE_LETTER::=!"
@@ -268,6 +424,7 @@ goto :main
     if errorlevel 1 (
         echo.
         echo  %RED%[!] Invalid drive letter: !DRIVE_LETTER!%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "WIPE_FREE_SPACE_ERROR" "Invalid letter: !DRIVE_LETTER!" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -276,6 +433,7 @@ goto :main
     if not exist "!DRIVE_LETTER!:\" (
         echo.
         echo  %RED%[!] Drive !DRIVE_LETTER!: does not exist or is not accessible.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "WIPE_FREE_SPACE_ERROR" "Drive not found: !DRIVE_LETTER!:" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -285,6 +443,7 @@ goto :main
     call :safety_confirm
     if "!CONFIRMED!"=="0" (
         echo  %YELLOW%[!] Operation cancelled.%RESET%
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -298,6 +457,7 @@ goto :main
     echo  %GREEN%[✓] Free space wiped on drive !DRIVE_LETTER!:%RESET%
     call :log_entry "WIPE_FREE_SPACE" "!DRIVE_LETTER!:"
     echo.
+    if "!CLI_MODE!"=="1" ( exit /b 0 )
     pause
     goto :main
 
@@ -305,19 +465,22 @@ goto :main
 ::  OPTION 4 - Quick Secure Cleanup (file + free space)
 :: ============================================================
 :quick_cleanup
-    call :print_banner
-    echo.
-    echo  %BOLD%%WHITE%[ Quick Secure Cleanup ]%RESET%
-    echo.
-    echo  %WHITE%  This will securely delete a file AND wipe free space on its drive.%RESET%
-    echo.
-    set /p "FILE_PATH=  Enter full path to the file: "
-
-    :: Strip surrounding quotes
-    set "FILE_PATH=!FILE_PATH:"=!"
+    if "!CLI_MODE!"=="0" (
+        call :print_banner
+        echo.
+        echo  %BOLD%%WHITE%[ Quick Secure Cleanup ]%RESET%
+        echo.
+        echo  %WHITE%  This will securely delete a file AND wipe free space on its drive.%RESET%
+        echo.
+        set /p "FILE_PATH=  Enter full path to the file: "
+        set "FILE_PATH=!FILE_PATH:"=!"
+    ) else (
+        set "FILE_PATH=!CLI_ARG1!"
+    )
 
     if "!FILE_PATH!"=="" (
-        echo  %RED%[!] No path entered. Returning to menu.%RESET%
+        echo  %RED%[!] No path provided.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "QUICK_CLEANUP_ERROR" "No path provided" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -325,6 +488,7 @@ goto :main
     if not exist "!FILE_PATH!" (
         echo.
         echo  %RED%[!] File not found: !FILE_PATH!%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "QUICK_CLEANUP_ERROR" "Not found: !FILE_PATH!" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -332,24 +496,28 @@ goto :main
     if exist "!FILE_PATH!\*" (
         echo.
         echo  %RED%[!] That path is a directory. Use option 2 to delete folders.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "QUICK_CLEANUP_ERROR" "Path is directory: !FILE_PATH!" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
 
-    :: Capture drive and directory before deletion
+    :: Capture drive, directory and size before deletion
     for %%F in ("!FILE_PATH!") do (
         set "FILE_DIR=%%~dpF"
         set "DRIVE_LETTER=%%~dF"
+        set "FILE_SIZE=%%~zF"
     )
     :: Remove trailing colon from drive letter variable
     set "DRIVE_LETTER=!DRIVE_LETTER::=!"
 
     echo.
     echo  %YELLOW%  Target file:  !FILE_PATH!%RESET%
+    echo  %WHITE%  Size       :  !FILE_SIZE! bytes%RESET%
     echo  %YELLOW%  Target drive: !DRIVE_LETTER!:%RESET%
     call :safety_confirm
     if "!CONFIRMED!"=="0" (
         echo  %YELLOW%[!] Operation cancelled.%RESET%
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -360,6 +528,7 @@ goto :main
     if exist "!FILE_PATH!" (
         echo  %RED%[!] Failed to delete: !FILE_PATH!%RESET%
         call :log_entry "QUICK_CLEANUP_FAILED" "!FILE_PATH!"
+        if "!CLI_MODE!"=="1" ( exit /b 1 )
         timeout /t 3 /nobreak >nul
         goto :main
     )
@@ -372,6 +541,7 @@ goto :main
     echo  %GREEN%[✓] Quick cleanup completed for: !FILE_PATH!%RESET%
     call :log_entry "QUICK_CLEANUP" "!FILE_PATH!"
     echo.
+    if "!CLI_MODE!"=="1" ( exit /b 0 )
     pause
     goto :main
 
@@ -381,19 +551,20 @@ goto :main
 ::  and remove all partitions, rendering the disk unusable.
 :: ============================================================
 :full_disk_wipe
-    call :print_banner
-    echo.
-    echo  %BOLD%%WHITE%[ Full Disk Wipe — Zero-Fill Entire Disk ]%RESET%
-    echo.
-    echo  %RED%  ╔══════════════════════════════════════════════════════════════╗%RESET%
-    echo  %RED%  ║  THIS WILL DESTROY ALL DATA AND PARTITIONS ON A DISK.      ║%RESET%
-    echo  %RED%  ║  The disk will be completely zeroed and left UNUSABLE       ║%RESET%
-    echo  %RED%  ║  until re-initialised and formatted in Disk Management.    ║%RESET%
-    echo  %RED%  ╚══════════════════════════════════════════════════════════════╝%RESET%
-    echo.
+    if "!CLI_MODE!"=="0" (
+        call :print_banner
+        echo.
+        echo  %BOLD%%WHITE%[ Full Disk Wipe — Zero-Fill Entire Disk ]%RESET%
+        echo.
+        echo  %RED%  ╔══════════════════════════════════════════════════════════════╗%RESET%
+        echo  %RED%  ║  THIS WILL DESTROY ALL DATA AND PARTITIONS ON A DISK.      ║%RESET%
+        echo  %RED%  ║  The disk will be completely zeroed and left UNUSABLE       ║%RESET%
+        echo  %RED%  ║  until re-initialised and formatted in Disk Management.    ║%RESET%
+        echo  %RED%  ╚══════════════════════════════════════════════════════════════╝%RESET%
+        echo.
+    )
 
     :: Identify the system disk (the disk containing the Windows boot partition)
-    set "SYS_DISK="
     for /f "tokens=*" %%A in ('wmic os get SystemDrive /value 2^>nul ^| find "="') do set "%%A"
     if defined SystemDrive (
         set "SYS_DRIVE_LETTER=!SystemDrive:~0,1!"
@@ -412,31 +583,36 @@ goto :main
         )
     )
 
-    :: List available disks using diskpart
-    echo  %WHITE%  Available disks:%RESET%
-    echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
-    echo.
-    set "DP_LIST=%TEMP%\bitreaper_listdisk.txt"
-    (echo list disk) > "!DP_LIST!"
-    diskpart /s "!DP_LIST!" 2>nul | findstr /r /c:"Disk [0-9]"
-    del /f /q "!DP_LIST!" >nul 2>&1
-    echo.
-    echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
-    if defined SYS_DISK_NUM (
-        echo  %YELLOW%  ⚠  Disk !SYS_DISK_NUM! contains your system drive (!SYS_DRIVE_LETTER!:) and is PROTECTED.%RESET%
-    ) else (
-        echo  %YELLOW%  ⚠  System drive: !SYS_DRIVE_LETTER!: — its disk is protected from wiping.%RESET%
-    )
-    echo.
+    if "!CLI_MODE!"=="0" (
+        :: List available disks using diskpart
+        echo  %WHITE%  Available disks:%RESET%
+        echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
+        echo.
+        set "DP_LIST=%TEMP%\bitreaper_listdisk.txt"
+        (echo list disk) > "!DP_LIST!"
+        diskpart /s "!DP_LIST!" 2>nul | findstr /r /c:"Disk [0-9]"
+        del /f /q "!DP_LIST!" >nul 2>&1
+        echo.
+        echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
+        if defined SYS_DISK_NUM (
+            echo  %YELLOW%  ⚠  Disk !SYS_DISK_NUM! contains your system drive (!SYS_DRIVE_LETTER!:) and is PROTECTED.%RESET%
+        ) else (
+            echo  %YELLOW%  ⚠  System drive: !SYS_DRIVE_LETTER!: — its disk is protected from wiping.%RESET%
+        )
+        echo.
 
-    :: Prompt for disk number
-    set /p "DISK_NUM=  Enter the disk number to wipe (e.g. 1): "
+        :: Prompt for disk number
+        set /p "DISK_NUM=  Enter the disk number to wipe (e.g. 1): "
+    ) else (
+        set "DISK_NUM=!CLI_ARG1!"
+    )
 
     :: Validate: must be a number
     echo !DISK_NUM! | findstr /r "^[0-9][0-9]*$" >nul 2>&1
     if errorlevel 1 (
         echo.
         echo  %RED%[!] Invalid disk number: !DISK_NUM!%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "FULL_DISK_WIPE_ERROR" "Invalid disk number: !DISK_NUM!" & exit /b 1 )
         timeout /t 2 /nobreak >nul
         goto :main
     )
@@ -447,40 +623,50 @@ goto :main
             echo.
             echo  %RED%[!] REFUSED — Disk !DISK_NUM! contains the system drive (!SYS_DRIVE_LETTER!:).%RESET%
             echo  %RED%    Wiping the system disk is not allowed for safety.%RESET%
+            if "!CLI_MODE!"=="1" ( call :log_entry "FULL_DISK_WIPE_REFUSED" "Disk !DISK_NUM! is system disk" & exit /b 1 )
             timeout /t 3 /nobreak >nul
             goto :main
         )
     )
 
-    :: First confirmation
-    echo.
-    echo  %YELLOW%  Target: Disk !DISK_NUM!%RESET%
-    echo.
-    echo  %RED%╔══════════════════════════════════════════════════════════════╗%RESET%
-    echo  %RED%║                  ⚠  FINAL WARNING  ⚠                       ║%RESET%
-    echo  %RED%║  ALL data on the selected disk will be DESTROYED.           ║%RESET%
-    echo  %RED%║  Every sector will be overwritten with zeros.               ║%RESET%
-    echo  %RED%║  All partitions will be removed.                            ║%RESET%
-    echo  %RED%║  The disk will be left UNUSABLE until re-initialised.       ║%RESET%
-    echo  %RED%║  This action CANNOT be undone.                              ║%RESET%
-    echo  %RED%╚══════════════════════════════════════════════════════════════╝%RESET%
-    echo.
-    set "CONFIRMED=0"
-    set /p "CONFIRM=  Type YES to continue (anything else cancels): "
-    if /i not "!CONFIRM!"=="YES" (
-        echo  %YELLOW%[!] Operation cancelled.%RESET%
-        timeout /t 2 /nobreak >nul
-        goto :main
-    )
-
-    :: Second confirmation — require the user to re-type the disk number
-    echo.
-    set /p "CONFIRM_NUM=  Re-enter the disk number to confirm: "
-    if not "!CONFIRM_NUM!"=="!DISK_NUM!" (
+    if "!CLI_MODE!"=="0" (
+        :: Interactive double-confirmation
         echo.
-        echo  %RED%[!] Disk number does not match. Operation cancelled.%RESET%
-        timeout /t 2 /nobreak >nul
-        goto :main
+        echo  %YELLOW%  Target: Disk !DISK_NUM!%RESET%
+        echo.
+        echo  %RED%╔══════════════════════════════════════════════════════════════╗%RESET%
+        echo  %RED%║                  ⚠  FINAL WARNING  ⚠                       ║%RESET%
+        echo  %RED%║  ALL data on the selected disk will be DESTROYED.           ║%RESET%
+        echo  %RED%║  Every sector will be overwritten with zeros.               ║%RESET%
+        echo  %RED%║  All partitions will be removed.                            ║%RESET%
+        echo  %RED%║  The disk will be left UNUSABLE until re-initialised.       ║%RESET%
+        echo  %RED%║  This action CANNOT be undone.                              ║%RESET%
+        echo  %RED%╚══════════════════════════════════════════════════════════════╝%RESET%
+        echo.
+        set "CONFIRMED=0"
+        set /p "CONFIRM=  Type YES to continue (anything else cancels): "
+        if /i not "!CONFIRM!"=="YES" (
+            echo  %YELLOW%[!] Operation cancelled.%RESET%
+            timeout /t 2 /nobreak >nul
+            goto :main
+        )
+        :: Second confirmation — require the user to re-type the disk number
+        echo.
+        set /p "CONFIRM_NUM=  Re-enter the disk number to confirm: "
+        if not "!CONFIRM_NUM!"=="!DISK_NUM!" (
+            echo.
+            echo  %RED%[!] Disk number does not match. Operation cancelled.%RESET%
+            timeout /t 2 /nobreak >nul
+            goto :main
+        )
+    ) else (
+        :: CLI mode requires explicit /confirmed flag for full disk wipe
+        if "!CLI_CONFIRMED!"=="0" (
+            echo  %RED%[!] /full-disk requires the /confirmed flag in CLI mode.%RESET%
+            echo  %RED%    Usage: bitreaper.bat /full-disk !DISK_NUM! /confirmed%RESET%
+            call :log_entry "FULL_DISK_WIPE_ERROR" "Missing /confirmed for Disk !DISK_NUM!"
+            exit /b 1
+        )
     )
 
     :: Execute full disk wipe using diskpart clean all
@@ -509,13 +695,126 @@ goto :main
         echo  %GREEN%    All sectors zeroed. All partitions removed.%RESET%
         echo  %GREEN%    The disk is now blank and unusable until re-initialised.%RESET%
         call :log_entry "FULL_DISK_WIPE_COMPLETE" "Disk !DISK_NUM!"
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
     ) else (
         echo.
         echo  %RED%[!] Disk wipe may have failed or encountered errors on Disk !DISK_NUM!.%RESET%
         echo  %RED%    Check that the disk is not in use and try again.%RESET%
         call :log_entry "FULL_DISK_WIPE_FAILED" "Disk !DISK_NUM!"
+        if "!CLI_MODE!"=="1" ( exit /b 1 )
     )
     echo.
+    pause
+    goto :main
+
+:: ============================================================
+::  OPTION 6 - Delete Volume Shadow Copies (VSS)
+::  Removes all VSS snapshots for a drive so that "Previous
+::  Versions" restore points cannot be used to recover data.
+::  Recommended before wiping free space on sensitive volumes.
+:: ============================================================
+:delete_vss
+    if "!CLI_MODE!"=="0" (
+        call :print_banner
+        echo.
+        echo  %BOLD%%WHITE%[ Delete Volume Shadow Copies (VSS) ]%RESET%
+        echo.
+        echo  %WHITE%  Deletes all Volume Shadow Copies for a specified drive.%RESET%
+        echo  %WHITE%  This removes "Previous Versions" restore points that could%RESET%
+        echo  %WHITE%  be used to recover data after a secure delete or wipe.%RESET%
+        echo.
+        echo  %WHITE%  Tip: run this BEFORE Option 3 (Wipe Free Space) to ensure%RESET%
+        echo  %WHITE%  VSS snapshots cannot be used to recover deleted files.%RESET%
+        echo.
+        set /p "DRIVE_LETTER=  Drive letter (letter only, no colon): "
+    ) else (
+        set "DRIVE_LETTER=!CLI_ARG1!"
+    )
+
+    set "DRIVE_LETTER=!DRIVE_LETTER::=!"
+    set "DRIVE_LETTER=!DRIVE_LETTER:\=!"
+
+    :: Validate single letter A-Z
+    echo !DRIVE_LETTER! | findstr /r "^[A-Za-z]$" >nul 2>&1
+    if errorlevel 1 (
+        echo.
+        echo  %RED%[!] Invalid drive letter: !DRIVE_LETTER!%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "DELETE_VSS_ERROR" "Invalid letter: !DRIVE_LETTER!" & exit /b 1 )
+        timeout /t 2 /nobreak >nul
+        goto :main
+    )
+
+    if not exist "!DRIVE_LETTER!:\" (
+        echo.
+        echo  %RED%[!] Drive !DRIVE_LETTER!: does not exist or is not accessible.%RESET%
+        if "!CLI_MODE!"=="1" ( call :log_entry "DELETE_VSS_ERROR" "Drive not found: !DRIVE_LETTER!:" & exit /b 1 )
+        timeout /t 2 /nobreak >nul
+        goto :main
+    )
+
+    echo.
+    echo  %YELLOW%  Target drive: !DRIVE_LETTER!:%RESET%
+    call :safety_confirm
+    if "!CONFIRMED!"=="0" (
+        echo  %YELLOW%[!] Operation cancelled.%RESET%
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
+        timeout /t 2 /nobreak >nul
+        goto :main
+    )
+
+    echo.
+    echo  %GREEN%[+] Deleting all Volume Shadow Copies on !DRIVE_LETTER!: ...%RESET%
+    vssadmin delete shadows /for=!DRIVE_LETTER!: /all /quiet >nul 2>&1
+    set "VSS_RESULT=!errorlevel!"
+
+    if "!VSS_RESULT!"=="0" (
+        echo  %GREEN%[✓] All shadow copies deleted on !DRIVE_LETTER!:%RESET%
+        call :log_entry "DELETE_VSS" "!DRIVE_LETTER!:"
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
+    ) else (
+        echo  %YELLOW%[!] No shadow copies found on !DRIVE_LETTER!:, or deletion encountered%RESET%
+        echo  %YELLOW%    an error. (Exit code: !VSS_RESULT!)%RESET%
+        echo  %YELLOW%    This is normal if no VSS snapshots exist on this drive.%RESET%
+        call :log_entry "DELETE_VSS_NONE_OR_FAILED" "!DRIVE_LETTER!: exitcode=!VSS_RESULT!"
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
+    )
+    echo.
+    pause
+    goto :main
+
+:: ============================================================
+::  OPTION 7 - View Audit Log
+:: ============================================================
+:view_log
+    if "!CLI_MODE!"=="0" call :print_banner
+    echo.
+    echo  %BOLD%%WHITE%[ Audit Log ]%RESET%
+    echo.
+
+    if not exist "!LOGFILE!" (
+        echo  %YELLOW%  No log file found at: !LOGFILE!%RESET%
+        echo.
+        if "!CLI_MODE!"=="1" ( exit /b 0 )
+        pause
+        goto :main
+    )
+
+    echo  %CYAN%  Log file: !LOGFILE!%RESET%
+    echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
+    echo.
+    type "!LOGFILE!"
+    echo.
+    echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
+
+    if exist "!LOGFILE!.1" (
+        echo.
+        echo  %WHITE%  Rotated archive(s):%RESET%
+        if exist "!LOGFILE!.1" echo    !LOGFILE!.1
+        if exist "!LOGFILE!.2" echo    !LOGFILE!.2
+        if exist "!LOGFILE!.3" echo    !LOGFILE!.3
+    )
+    echo.
+    if "!CLI_MODE!"=="1" ( exit /b 0 )
     pause
     goto :main
 
@@ -527,7 +826,7 @@ goto :main
     echo.
     echo  %CYAN%  Thank you for using BitReaper. Stay secure.%RESET%
     echo.
-    call :log_entry "EXIT" "N/A"
+    call :log_entry "SESSION_END" "N/A"
     timeout /t 2 /nobreak >nul
     endlocal
     exit /b 0
