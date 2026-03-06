@@ -21,6 +21,7 @@ BitReaper is a lightweight Windows batch (`.bat`) utility that securely deletes 
 | 📁 Secure folder delete | Recursively wipe a folder and scrub freed space |
 | 💿 Free space wipe | Overwrite all unallocated clusters on any drive |
 | ⚡ Quick cleanup | Delete a file and wipe the drive's free space in one step |
+| 💀 Full disk wipe | Zero-fill every sector on a disk and remove all partitions, rendering it unusable |
 | 📋 Audit log | Every action is timestamped in `logs/bitreaper.log` |
 | 🛡️ Safety prompts | Mandatory `YES` confirmation before any destructive action |
 | 🎨 Colour output | ANSI colours on Windows 10+ terminals |
@@ -61,7 +62,8 @@ Launch the script and select from the interactive menu:
    2 -  Securely delete a folder
    3 -  Wipe free disk space
    4 -  Quick secure cleanup (file + free space)
-   5 -  Exit
+   5 -  Full disk wipe (zero-fill entire disk)
+   6 -  Exit
 ```
 
 For detailed walkthroughs see [docs/usage.md](docs/usage.md) and [examples/example_usage.txt](examples/example_usage.txt).
@@ -75,11 +77,12 @@ BitReaper relies exclusively on **native Windows utilities** — no external dep
 | Command | Purpose |
 |---|---|
 | `cipher /w` | Overwrite unallocated clusters (3-pass: zeros, ones, random) |
+| `diskpart clean all` | Write zeros to every sector on a disk, removing all partitions |
 | `del /f /q` | Force-delete a file without prompting |
 | `del /f /s /q` | Recursively force-delete files in a folder |
 | `rd /s /q` | Remove a folder tree silently |
 | `choice` | Read a single keypress from the menu |
-| `set /p` | Read user input (file/folder path, drive letter) |
+| `set /p` | Read user input (file/folder path, drive letter, disk number) |
 | `timeout` | Brief pause between operations |
 
 ---
@@ -96,9 +99,10 @@ BitReaper relies exclusively on **native Windows utilities** — no external dep
 
 ## Limitations
 
-- **SSDs:** NAND wear-levelling means `cipher /w` cannot guarantee every physical cell is overwritten. See [docs/security.md](docs/security.md).
-- **NTFS metadata:** Filenames and timestamps may persist in the MFT and change journal.
-- **VSS snapshots:** Volume Shadow Copies are not deleted automatically.
+- **SSDs:** NAND wear-levelling means `cipher /w` cannot guarantee every physical cell is overwritten. The full disk wipe (`diskpart clean all`) writes zeros sector-by-sector but SSD controllers may still retain data in remapped cells. See [docs/security.md](docs/security.md).
+- **NTFS metadata:** Filenames and timestamps may persist in the MFT and change journal (applies to Options 1–4; Option 5 erases the entire disk including all metadata).
+- **VSS snapshots:** Volume Shadow Copies are not deleted automatically (applies to Options 1–4; Option 5 removes all partitions and therefore all snapshots).
+- **System disk protection:** Option 5 will not wipe the disk containing the Windows system drive.
 
 ---
 

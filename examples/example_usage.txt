@@ -1,5 +1,5 @@
 ==============================================================
-  BitReaper v1.0 - Example Usage Scenarios
+  BitReaper v1.1 - Example Usage Scenarios
 ==============================================================
 
 All examples assume you are running bitreaper.bat as Administrator.
@@ -84,7 +84,50 @@ SCENARIO 4: Quick secure cleanup (file + drive wipe)
     [✓] Quick cleanup completed for: C:\Temp\dump.bin
 
 --------------------------------------------------------------
-SCENARIO 5: Prepare a drive for reuse (manual steps)
+SCENARIO 5: Full disk wipe — zero-fill and destroy a disk
+--------------------------------------------------------------
+
+  This operation writes zeros to EVERY sector on a physical
+  disk and removes all partitions. The disk will be left in a
+  raw, uninitialised state and cannot be used until it is
+  re-initialised and formatted in Disk Management.
+
+  ⚠  The system disk is automatically detected and protected.
+  ⚠  This requires a double confirmation for safety.
+
+  Menu selection: 5
+
+  The script will list available disks, for example:
+    Disk 0    Online       238 GB   (PROTECTED — system disk)
+    Disk 1    Online       931 GB
+
+  Prompt:
+    Enter the disk number to wipe (e.g. 1): 1
+
+  First confirmation:
+    Type YES to continue: YES
+
+  Second confirmation:
+    Re-enter the disk number to confirm: 1
+
+  Expected output:
+    [+] Starting full disk wipe on Disk 1...
+        Writing zeros to every sector. This may take a VERY long time
+        depending on disk size (hours for large HDDs).
+    [✓] Full disk wipe completed on Disk 1.
+        All sectors zeroed. All partitions removed.
+        The disk is now blank and unusable until re-initialised.
+
+  Log entry written to logs\bitreaper.log:
+    [2024-05-20 10:05:00] ACTION="FULL_DISK_WIPE_START" TARGET="Disk 1"
+    [2024-05-20 12:31:44] ACTION="FULL_DISK_WIPE_COMPLETE" TARGET="Disk 1"
+
+  Note: On a 1 TB HDD, the clean all operation can take 2-4
+  hours. On SSDs it will be faster but NAND wear-levelling
+  means some cells may not be overwritten. See docs/security.md.
+
+--------------------------------------------------------------
+SCENARIO 6: Prepare a drive for reuse (manual steps)
 --------------------------------------------------------------
 
   Step 1 — Delete all files on the drive:
