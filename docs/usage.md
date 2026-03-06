@@ -28,7 +28,7 @@ bitreaper.bat
  ██████╗ ██╗████████╗██████╗ ███████╗ █████╗ ██████╗ ███████╗
  ...
 
- BitReaper v2.0  |  Enterprise Secure Windows Data Eraser
+ BitReaper v2.1  |  Enterprise Secure Windows Data Eraser
  ================================================================
   Session: 4f3a9c01   User: Alice   Host: WORKSTATION01
  ================================================================
@@ -57,8 +57,9 @@ The header shows a **session ID** (unique to the current run), the logged-in **u
 2. Verifies the file exists and is not a directory.
 3. Displays the file size before prompting for confirmation.
 4. Warns if the target is on a network path (cipher /w effectiveness is not guaranteed on remote drives).
-5. Deletes the file with `del /f /q`.
-6. Runs `cipher /w` on the parent directory to overwrite freed sectors (3-pass: zeros, ones, random).
+5. **Zero-fills the file's content** using PowerShell before deletion (pre-wipe step).
+6. Deletes the file with `del /f /q`.
+7. Runs `cipher /w` on the parent directory to overwrite freed sectors (3-pass: zeros, ones, random).
 
 **Example session:**
 
@@ -69,6 +70,7 @@ Target: C:\Users\Alice\Documents\secret.docx
 Size  : 45312 bytes
 Type YES to continue: YES
 
+[+] Overwriting file contents (zero-fill)...
 [+] Deleting file...
 [+] Overwriting free sectors in: C:\Users\Alice\Documents\
 [✓] File securely deleted: C:\Users\Alice\Documents\secret.docx
@@ -82,9 +84,11 @@ Type YES to continue: YES
 
 1. Prompts for the full folder path.
 2. Verifies the path is a directory (not a file) and is not a drive root.
-3. Recursively deletes all files with `del /f /s /q`.
-4. Removes the folder tree with `rd /s /q`.
-5. Runs `cipher /w` on the parent directory to scrub freed sectors.
+3. Counts and displays the number of files before prompting for confirmation.
+4. **Zero-fills all file contents** in the folder using PowerShell (pre-wipe step).
+5. Recursively deletes all files with `del /f /s /q`.
+6. Removes the folder tree with `rd /s /q`.
+7. Runs `cipher /w` on the parent directory to scrub freed sectors.
 
 **Example session:**
 
@@ -92,8 +96,10 @@ Type YES to continue: YES
 Enter full path to the folder: C:\Temp\SensitiveProject
 
 Target: C:\Temp\SensitiveProject
+Files : 42 file(s)
 Type YES to continue: YES
 
+[+] Overwriting file contents before deletion...
 [+] Recursively deleting files in: C:\Temp\SensitiveProject
 [+] Removing folder tree...
 [+] Overwriting free sectors in: C:\Temp\
@@ -106,13 +112,20 @@ Type YES to continue: YES
 
 **What it does:**
 
-1. Prompts for a drive letter.
-2. Validates the drive exists.
-3. Runs `cipher /w:<drive>:\` to overwrite all unallocated clusters with three passes (zeros, ones, random data) — consistent with DoD 5220.22-M (E).
+1. Lists all available local fixed drives with their free space.
+2. Prompts for a drive letter.
+3. Validates the drive exists.
+4. Runs `cipher /w:<drive>:\` to overwrite all unallocated clusters with three passes (zeros, ones, random data) — consistent with DoD 5220.22-M (E).
 
 **Example session:**
 
 ```
+  Available local drives:
+  ─────────────────────────────────────────────────────────────
+   C:   (152430313472 bytes free)
+   D:   (498076672000 bytes free)
+  ─────────────────────────────────────────────────────────────
+
 Enter drive letter (letter only, no colon): C
 
 Target drive: C:
@@ -129,7 +142,7 @@ Type YES to continue: YES
 
 ## Option 4 — Quick Secure Cleanup
 
-Combines Option 1 (delete a file) and Option 3 (wipe free space on the same drive) in a single workflow. The file size is displayed before the confirmation prompt.
+Combines Option 1 (zero-fill and delete a file) and Option 3 (wipe free space on the same drive) in a single workflow. The file size is displayed before the confirmation prompt.
 
 ---
 
@@ -197,7 +210,9 @@ Combines Option 1 (delete a file) and Option 3 (wipe free space on the same driv
 
 **What it does:**
 
-Deletes all Volume Shadow Copies (Windows "Previous Versions") for a specified drive using `vssadmin delete shadows /for=<drive>: /all /quiet`.
+1. Lists all available local fixed drives with their free space.
+2. Prompts for a drive letter.
+3. Deletes all Volume Shadow Copies (Windows "Previous Versions") for the specified drive using `vssadmin delete shadows /for=<drive>: /all /quiet`.
 
 **Why this matters:**
 
@@ -214,6 +229,11 @@ Even after deleting files and wiping free space, Windows may retain previous ver
 **Example session:**
 
 ```
+  Available local drives:
+  ─────────────────────────────────────────────────────────────
+   C:   (152430313472 bytes free)
+  ─────────────────────────────────────────────────────────────
+
 Enter drive letter (letter only, no colon): C
 
 Target drive: C:
@@ -239,9 +259,33 @@ bitreaper.bat /view-log
 
 ---
 
+## Session Summary (Exit)
+
+When you exit BitReaper via Option 8, a **session summary** is displayed:
+
+```
+  Session Summary
+  ─────────────────────────────────────────────────────────────
+  Session ID         : 4f3a9c01
+  User               : Alice
+  Host               : WORKSTATION01
+  Operations this run: 3
+  Audit log          : C:\Tools\BitReaper\logs\bitreaper.log
+  ─────────────────────────────────────────────────────────────
+
+  Thank you for using BitReaper. Stay secure.
+```
+
+The `SESSION_END` log entry is also updated with the operation count:
+```
+[2025-06-01 09:15:50] SESSION="4f3a9c01" USER="Alice" ACTION="SESSION_END" TARGET="Actions=3"
+```
+
+---
+
 ## Command-Line / Silent Mode
 
-BitReaper v2.0 supports non-interactive execution via command-line arguments, suitable for:
+BitReaper v2.1 supports non-interactive execution via command-line arguments, suitable for:
 
 - Scheduled tasks (Windows Task Scheduler)
 - Scripted deployment and decommissioning workflows
@@ -257,6 +301,7 @@ bitreaper.bat /quick-cleanup  <path>         [/confirmed]
 bitreaper.bat /full-disk      <disk-number>  [/confirmed]
 bitreaper.bat /delete-vss     <letter>       [/confirmed]
 bitreaper.bat /view-log
+bitreaper.bat /export-log     <destination>
 bitreaper.bat /help
 ```
 
@@ -265,6 +310,18 @@ bitreaper.bat /help
 Without `/confirmed`, operations that would be destructive will fail with an error in CLI mode. Adding `/confirmed` skips the interactive `YES` prompt.
 
 > ⚠️ **Caution:** `/confirmed` bypasses the safety gate. Use it only in controlled, scripted environments where the target has already been verified.
+
+### `/export-log` command
+
+Copies the current `bitreaper.log` to a specified destination path. Useful for archiving logs to a compliance share or shipping them to a SIEM.
+
+```cmd
+:: Export audit log to a network compliance share
+bitreaper.bat /export-log "\\server\compliance\bitreaper-audit.log"
+
+:: Export locally
+bitreaper.bat /export-log "C:\Audit\bitreaper-2025-06-01.log"
+```
 
 ### Exit codes
 
@@ -276,7 +333,7 @@ Without `/confirmed`, operations that would be destructive will fail with an err
 ### Examples
 
 ```cmd
-:: Securely delete a file (no prompt)
+:: Securely delete a file (no prompt) — includes pre-wipe zero-fill
 bitreaper.bat /delete-file "C:\Temp\dump.bin" /confirmed
 
 :: Wipe free space on D: (no prompt)
@@ -291,6 +348,9 @@ bitreaper.bat /full-disk 2 /confirmed
 
 :: View the audit log
 bitreaper.bat /view-log
+
+:: Export audit log
+bitreaper.bat /export-log "\\server\share\audit.log"
 ```
 
 ---
@@ -299,13 +359,13 @@ bitreaper.bat /view-log
 
 All operations are recorded in `logs/bitreaper.log` inside the script directory.
 
-**Log format (v2.0):**
+**Log format (v2.1):**
 
 ```
 [2025-06-01 09:12:05] SESSION="4f3a9c01" USER="Alice" ACTION="SESSION_START" TARGET="User=Alice Host=WORKSTATION01"
 [2025-06-01 09:12:18] SESSION="4f3a9c01" USER="Alice" ACTION="SECURE_DELETE_FILE" TARGET="C:\Users\Alice\secret.docx"
 [2025-06-01 09:15:44] SESSION="4f3a9c01" USER="Alice" ACTION="WIPE_FREE_SPACE" TARGET="C:"
-[2025-06-01 09:15:50] SESSION="4f3a9c01" USER="Alice" ACTION="SESSION_END" TARGET="N/A"
+[2025-06-01 09:15:50] SESSION="4f3a9c01" USER="Alice" ACTION="SESSION_END" TARGET="Actions=2"
 ```
 
 Each entry includes:
@@ -322,16 +382,16 @@ Each entry includes:
 | ACTION | Meaning |
 |---|---|
 | `SESSION_START` | Script launched |
-| `SESSION_END` | Script exited via the Exit menu option |
-| `SECURE_DELETE_FILE` | File successfully deleted and free space overwritten |
+| `SESSION_END` | Script exited via the Exit menu option (includes action count) |
+| `SECURE_DELETE_FILE` | File successfully zero-filled, deleted, and free space overwritten |
 | `SECURE_DELETE_FILE_FAILED` | `del` could not remove the file |
 | `SECURE_DELETE_FILE_ERROR` | Validation error (not found, is a directory, no path) |
-| `SECURE_DELETE_FOLDER` | Folder successfully deleted and free space overwritten |
+| `SECURE_DELETE_FOLDER` | Folder successfully zero-filled, deleted, and free space overwritten |
 | `SECURE_DELETE_FOLDER_PARTIAL` | Folder removed but some locked files may remain |
 | `SECURE_DELETE_FOLDER_ERROR` | Validation error |
 | `WIPE_FREE_SPACE` | `cipher /w` completed for the drive |
 | `WIPE_FREE_SPACE_ERROR` | Validation error (invalid letter, drive not found) |
-| `QUICK_CLEANUP` | File deleted and drive free space wiped |
+| `QUICK_CLEANUP` | File zero-filled, deleted, and drive free space wiped |
 | `QUICK_CLEANUP_FAILED` | `del` could not remove the file |
 | `QUICK_CLEANUP_ERROR` | Validation error |
 | `FULL_DISK_WIPE_START` | `diskpart clean all` started |
@@ -342,6 +402,7 @@ Each entry includes:
 | `DELETE_VSS` | All VSS shadows deleted for the drive |
 | `DELETE_VSS_NONE_OR_FAILED` | No shadows found or `vssadmin` returned non-zero |
 | `DELETE_VSS_ERROR` | Validation error |
+| `EXPORT_LOG` | Audit log copied to the specified destination |
 
 ---
 

@@ -18,15 +18,17 @@ BitReaper is a Windows batch (`.bat`) utility that securely deletes files and wi
 | Feature | Description |
 |---|---|
 | 🛂 Admin privilege check | Refuses to start without elevated rights; no silent partial-failure |
-| 🗑️ Secure file delete | Delete a single file and overwrite its freed sectors |
-| 📁 Secure folder delete | Recursively wipe a folder and scrub freed space |
-| 💿 Free space wipe | Overwrite all unallocated clusters on any drive (DoD 3-pass via `cipher /w`) |
-| ⚡ Quick cleanup | Delete a file and wipe the drive's free space in one step |
+| 🗑️ Secure file delete | Zero-fill file content, then delete and overwrite freed sectors |
+| 📁 Secure folder delete | Per-file zero-fill, then recursively wipe the folder and scrub freed space |
+| 💿 Free space wipe | Lists available drives; overwrites all unallocated clusters on any drive (DoD 3-pass via `cipher /w`) |
+| ⚡ Quick cleanup | Zero-fill a file, delete it, and wipe the drive's free space in one step |
 | 💀 Full disk wipe | Zero-fill every sector on a disk and remove all partitions |
-| 👻 VSS shadow deletion | Delete all Volume Shadow Copies (Previous Versions) for a drive |
+| 👻 VSS shadow deletion | Lists available drives; deletes all Volume Shadow Copies (Previous Versions) for a drive |
 | 📋 Structured audit log | Every action is timestamped with session ID, username, and hostname |
 | 🔄 Log rotation | Log file auto-rotates to `.log.1/.2/.3` when it exceeds 1 MB |
 | 👁️ Log viewer | View the current audit log from within the tool |
+| 📤 Log export | Copy the audit log to any path via `/export-log` |
+| 📊 Session summary | Exit screen shows operations completed, session ID, and log path |
 | 🤖 CLI / silent mode | Scriptable command-line arguments for automation and scheduled tasks |
 | 🛡️ Safety prompts | Mandatory `YES` confirmation; full disk wipe has double confirmation |
 | 🎨 Colour output | ANSI colours on Windows 10+ terminals |
@@ -82,7 +84,7 @@ For detailed walkthroughs see [docs/usage.md](docs/usage.md) and [examples/examp
 
 ## Command-Line / Silent Mode
 
-BitReaper v2.0 supports command-line arguments for scripted and automated use:
+BitReaper v2.1 supports command-line arguments for scripted and automated use:
 
 ```cmd
 bitreaper.bat /delete-file    <path>         [/confirmed]
@@ -92,6 +94,7 @@ bitreaper.bat /quick-cleanup  <path>         [/confirmed]
 bitreaper.bat /full-disk      <disk-number>  [/confirmed]
 bitreaper.bat /delete-vss     <letter>       [/confirmed]
 bitreaper.bat /view-log
+bitreaper.bat /export-log     <destination>
 bitreaper.bat /help
 ```
 
@@ -112,6 +115,9 @@ bitreaper.bat /wipe-drive C /confirmed
 
 :: Full disk wipe from a script (requires /confirmed)
 bitreaper.bat /full-disk 2 /confirmed
+
+:: Export the audit log to a network share
+bitreaper.bat /export-log "\\server\compliance\bitreaper-audit.log"
 ```
 
 ---
@@ -120,13 +126,13 @@ bitreaper.bat /full-disk 2 /confirmed
 
 All operations are recorded in `logs/bitreaper.log` inside the script directory.
 
-**v2.0 log format includes session ID, username, and hostname:**
+**v2.1 log format includes session ID, username, and hostname:**
 
 ```
 [2025-06-01 09:12:05] SESSION="4f3a9c01" USER="Alice" ACTION="SESSION_START" TARGET="User=Alice Host=WORKSTATION01"
 [2025-06-01 09:12:18] SESSION="4f3a9c01" USER="Alice" ACTION="SECURE_DELETE_FILE" TARGET="C:\Users\Alice\secret.docx"
 [2025-06-01 09:15:44] SESSION="4f3a9c01" USER="Alice" ACTION="WIPE_FREE_SPACE" TARGET="C:"
-[2025-06-01 09:15:50] SESSION="4f3a9c01" USER="Alice" ACTION="SESSION_END" TARGET="N/A"
+[2025-06-01 09:15:50] SESSION="4f3a9c01" USER="Alice" ACTION="SESSION_END" TARGET="Actions=2"
 ```
 
 **Log rotation:** When `bitreaper.log` exceeds **1 MB**, it is automatically renamed to `bitreaper.log.1` (up to `.log.3` archived copies) and a fresh log file is started.
@@ -148,6 +154,7 @@ BitReaper relies exclusively on **native Windows utilities** — no external dep
 | `del /f /q` | Force-delete a file without prompting |
 | `del /f /s /q` | Recursively force-delete files in a folder |
 | `rd /s /q` | Remove a folder tree silently |
+| `powershell` | Zero-fill file contents before deletion (pre-wipe step) |
 | `choice` | Read a single keypress from the menu |
 | `set /p` | Read user input (file/folder path, drive letter, disk number) |
 | `timeout` | Brief pause between operations |
@@ -177,7 +184,7 @@ BitReaper relies exclusively on **native Windows utilities** — no external dep
 
 ```
 BitReaper/
-├── bitreaper.bat          ← Main script (v2.0)
+├── bitreaper.bat          ← Main script (v2.1)
 ├── README.md
 ├── LICENSE                ← MIT
 ├── .gitignore

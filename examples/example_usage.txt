@@ -1,5 +1,5 @@
 ==============================================================
-  BitReaper v2.0 - Example Usage Scenarios
+  BitReaper v2.1 - Example Usage Scenarios
 ==============================================================
 
 All examples assume you are running bitreaper.bat as Administrator.
@@ -23,6 +23,7 @@ SCENARIO 1: Securely delete a single sensitive file
     Type YES to continue: YES
 
   Expected output:
+    [+] Overwriting file contents (zero-fill)...
     [+] Deleting file...
     [+] Overwriting free sectors in: C:\Users\Alice\Documents\
     [✓] File securely deleted: C:\Users\Alice\Documents\tax_2023.xlsx
@@ -39,10 +40,15 @@ SCENARIO 2: Securely delete a project folder
   Prompt:
     Enter full path to the folder: C:\Projects\ClientData
 
+  Pre-confirmation display:
+    Target: C:\Projects\ClientData
+    Files : 17 file(s)
+
   Confirmation:
     Type YES to continue: YES
 
   Expected output:
+    [+] Overwriting file contents before deletion...
     [+] Recursively deleting files in: C:\Projects\ClientData
     [+] Removing folder tree...
     [+] Overwriting free sectors in: C:\Projects\
@@ -56,6 +62,13 @@ SCENARIO 3: Wipe free space on drive D:
 --------------------------------------------------------------
 
   Menu selection: 3
+
+  Drive listing displayed automatically:
+    Available local drives:
+    ─────────────────────────────────────────────────────────────
+     C:   (52428800000 bytes free)
+     D:   (498076672000 bytes free)
+    ─────────────────────────────────────────────────────────────
 
   Prompt:
     Drive letter (letter only, no colon): D
@@ -183,7 +196,7 @@ SCENARIO 7: View the audit log
 SCENARIO 8: Scripted / automated use (CLI mode)
 --------------------------------------------------------------
 
-  BitReaper v2.0 supports non-interactive command-line arguments
+  BitReaper v2.1 supports non-interactive command-line arguments
   for scheduled tasks and automation pipelines.
 
   All CLI operations:
@@ -193,7 +206,7 @@ SCENARIO 8: Scripted / automated use (CLI mode)
 
   Examples:
 
-    :: Silently delete a file (no prompt, no pause)
+    :: Silently delete a file (no prompt, no pause) — includes zero-fill
     bitreaper.bat /delete-file "C:\Temp\secret.bin" /confirmed
 
     :: Wipe free space on D: without interaction
@@ -208,6 +221,9 @@ SCENARIO 8: Scripted / automated use (CLI mode)
 
     :: View the audit log (read-only, no /confirmed needed)
     bitreaper.bat /view-log
+
+    :: Export audit log to a network compliance share
+    bitreaper.bat /export-log "\\server\compliance\bitreaper-audit.log"
 
     :: Display CLI help
     bitreaper.bat /help
@@ -241,6 +257,27 @@ SCENARIO 9: Prepare a drive for reuse (full pipeline)
     bitreaper.bat /delete-vss  D /confirmed
     bitreaper.bat /wipe-drive  D /confirmed
 
+--------------------------------------------------------------
+SCENARIO 10: Export audit log for compliance archiving
+--------------------------------------------------------------
+
+  After completing secure erasure operations, export the audit
+  log to a network share or local archive for compliance records.
+
+  From the command line:
+    bitreaper.bat /export-log "\\server\compliance\bitreaper-2025-06.log"
+
+  Or copy locally:
+    bitreaper.bat /export-log "C:\Audit\bitreaper-2025-06-01.log"
+
+  The export command:
+  - Copies the current bitreaper.log to the destination
+  - Records an EXPORT_LOG entry in the audit log itself
+  - Returns exit code 0 on success, 1 on failure
+
+  Log entry written after export:
+    [2025-06-01 16:00:00] SESSION="4f3a9c01" USER="Alice" ACTION="EXPORT_LOG" TARGET="\\server\compliance\bitreaper-2025-06.log"
+
 ==============================================================
   NOTES
 ==============================================================
@@ -248,6 +285,11 @@ SCENARIO 9: Prepare a drive for reuse (full pipeline)
 * Always run bitreaper.bat as Administrator so that
   cipher /w can access all unallocated clusters and
   vssadmin can delete shadow copies.
+
+* Files and folders are zero-filled before deletion (pre-wipe).
+  This overwrites file content in-place before the sectors are
+  freed, providing an additional layer of assurance beyond the
+  standard del + cipher /w approach.
 
 * On SSDs, sector-level overwriting is not guaranteed due
   to NAND wear-levelling. See docs/security.md for details.
