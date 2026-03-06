@@ -414,7 +414,7 @@ goto :main
         goto :main
     )
     :: Also catch bare drive letter with colon (e.g. "C:")
-    echo "!FOLDER_PATH!" | findstr /r /c:"^\"[A-Za-z]:\"$" >nul 2>&1
+    echo !FOLDER_PATH! | findstr /r "^[A-Za-z]:$" >nul 2>&1
     if not errorlevel 1 (
         echo.
         echo  %RED%[!] Refusing to wipe a drive root path for safety.%RESET%
