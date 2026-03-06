@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 :: ============================================================
-::  BitReaper v2.0 - Enterprise Secure Windows Data Eraser
+::  BitReaper v2.1 - Enterprise Secure Windows Data Eraser
 ::  Uses only native Windows commands (cipher, del, rd, diskpart)
 ::  Compatible with Windows 10, Windows 11, Windows Server 2016+
 :: ============================================================
@@ -10,7 +10,8 @@ setlocal EnableDelayedExpansion
 :: ── Initialise log directory and log file path ───────────────
 if not exist "%~dp0logs" mkdir "%~dp0logs"
 set "LOGFILE=%~dp0logs\bitreaper.log"
-set "SCRIPT_VERSION=2.0"
+set "SCRIPT_VERSION=2.1"
+set "SESSION_ACTIONS=0"
 
 :: ── Capture session metadata ──────────────────────────────────
 set "RUN_USER=%USERNAME%"
@@ -55,6 +56,7 @@ set "CLI_ARG1="
 if /i "%~1"=="/help"          goto :show_help
 if /i "%~1"=="/?"             goto :show_help
 if /i "%~1"=="/view-log"      ( set "CLI_MODE=1" & set "CLI_OPERATION=view_log"       & goto :cli_dispatch )
+if /i "%~1"=="/export-log"    ( set "CLI_MODE=1" & set "CLI_OPERATION=export_log"     & set "CLI_ARG1=%~2" )
 if /i "%~1"=="/delete-file"   ( set "CLI_MODE=1" & set "CLI_OPERATION=delete_file"    & set "CLI_ARG1=%~2" )
 if /i "%~1"=="/delete-folder" ( set "CLI_MODE=1" & set "CLI_OPERATION=delete_folder"  & set "CLI_ARG1=%~2" )
 if /i "%~1"=="/wipe-drive"    ( set "CLI_MODE=1" & set "CLI_OPERATION=wipe_space"     & set "CLI_ARG1=%~2" )
@@ -80,6 +82,7 @@ goto :main
     if "!CLI_OPERATION!"=="full_disk_wipe" goto :full_disk_wipe
     if "!CLI_OPERATION!"=="delete_vss"     goto :delete_vss
     if "!CLI_OPERATION!"=="view_log"       goto :view_log
+    if "!CLI_OPERATION!"=="export_log"     goto :export_log
     goto :show_help
 
 :: ============================================================
@@ -123,10 +126,52 @@ goto :main
     echo  ██████╔╝██║   ██║   ██║  ██║███████╗██║  ██║██║  ██║███████╗
     echo  ╚═════╝ ╚═╝   ╚═╝   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝
     echo %RESET%
-    echo  %BOLD%%WHITE%BitReaper v2.0  ^|  Enterprise Secure Windows Data Eraser%RESET%
+    echo  %BOLD%%WHITE%BitReaper v2.1  ^|  Enterprise Secure Windows Data Eraser%RESET%
     echo  %CYAN%================================================================%RESET%
     echo  %WHITE%  Session: !SESSION_ID!   User: !RUN_USER!   Host: %COMPUTERNAME%%RESET%
     echo  %CYAN%================================================================%RESET%
+    goto :eof
+
+:: ============================================================
+::  HELPER: List available local fixed drives with free space
+:: ============================================================
+:list_drives
+    echo  %WHITE%  Available local drives:%RESET%
+    echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
+    for %%D in (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
+        if exist "%%D:\" (
+            for /f "tokens=3" %%S in ('dir %%D:\ /-c /w 2^>nul ^| findstr /i "bytes free"') do (
+                echo    %%D:   ^(%%S bytes free^)
+            )
+        )
+    )
+    echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
+    goto :eof
+
+:: ============================================================
+::  HELPER: Zero-fill a file's content before deletion (pre-wipe)
+::  Usage: call :wipe_file "<full_path>"
+::  Overwrites all bytes in the file with zeros via PowerShell.
+::  Uses chunked writing (1 MB buffer) to handle large files without
+::  exhausting memory. Silently skips empty or inaccessible files.
+:: ============================================================
+:wipe_file
+    set "PS_FILE=%~1"
+    :: Open file for writing, write zeroed chunks until all bytes are covered
+    powershell -NoProfile -NonInteractive -Command "$f=$env:PS_FILE; try{$i=New-Object IO.FileInfo($f); if($i.Length -gt 0){$s=$i.OpenWrite(); $b=[byte[]]::new([Math]::Min($i.Length,1048576)); $r=$i.Length; while($r-gt 0){$w=[Math]::Min($r,$b.Length);$s.Write($b,0,$w);$r-=$w}; $s.Flush();$s.Close()}}catch{}" >nul 2>&1
+    goto :eof
+
+:: ============================================================
+::  HELPER: Zero-fill all files in a folder before deletion
+::  Usage: call :wipe_folder "<folder_path>"
+::  Iterates every file under the folder and overwrites content
+::  with zeros via PowerShell (1 MB buffer per file). Silently
+::  skips files that are locked or inaccessible.
+:: ============================================================
+:wipe_folder
+    set "PS_FOLDER=%~1"
+    :: Enumerate all files recursively and zero-fill each one
+    powershell -NoProfile -NonInteractive -Command "$d=$env:PS_FOLDER; Get-ChildItem -Path $d -Recurse -File | ForEach-Object { try { $s=$_.OpenWrite(); $b=[byte[]]::new([Math]::Min($_.Length,1048576)); $r=$_.Length; while($r -gt 0){$w=[Math]::Min($r,$b.Length);$s.Write($b,0,$w);$r-=$w}; $s.Flush();$s.Close() } catch {} }" >nul 2>&1
     goto :eof
 
 :: ============================================================
@@ -156,7 +201,7 @@ goto :main
 :: ============================================================
 :show_help
     echo.
-    echo  BitReaper v2.0 - Enterprise Secure Windows Data Eraser
+    echo  BitReaper v2.1 - Enterprise Secure Windows Data Eraser
     echo  ================================================================
     echo.
     echo  USAGE:
@@ -172,6 +217,7 @@ goto :main
     echo      bitreaper.bat /full-disk      ^<disk-number^>  [/confirmed]
     echo      bitreaper.bat /delete-vss     ^<letter^>       [/confirmed]
     echo      bitreaper.bat /view-log
+    echo      bitreaper.bat /export-log     ^<destination^>
     echo      bitreaper.bat /help
     echo.
     echo  OPTIONS:
@@ -183,9 +229,11 @@ goto :main
     echo    bitreaper.bat /wipe-drive D /confirmed
     echo    bitreaper.bat /delete-vss C /confirmed
     echo    bitreaper.bat /view-log
+    echo    bitreaper.bat /export-log "\\server\share\audit.log"
     echo.
     echo  NOTES:
     echo    - All operations require Administrator privileges.
+    echo    - Files are zero-filled before deletion (pre-wipe step).
     echo    - Every action is written to: logs\bitreaper.log
     echo    - Log files rotate automatically when they exceed 1 MB.
     echo    - /full-disk always requires /confirmed in CLI mode.
@@ -289,6 +337,8 @@ goto :main
     )
 
     echo.
+    echo  %GREEN%[+] Overwriting file contents (zero-fill)...%RESET%
+    call :wipe_file "!FILE_PATH!"
     echo  %GREEN%[+] Deleting file...%RESET%
     del /f /q "!FILE_PATH!" >nul 2>&1
     if exist "!FILE_PATH!" (
@@ -306,6 +356,7 @@ goto :main
     echo.
     echo  %GREEN%[✓] File securely deleted: !FILE_PATH!%RESET%
     call :log_entry "SECURE_DELETE_FILE" "!FILE_PATH!"
+    set /a "SESSION_ACTIONS+=1"
     echo.
     if "!CLI_MODE!"=="1" ( exit /b 0 )
     pause
@@ -360,8 +411,13 @@ goto :main
         goto :main
     )
 
+    :: Count files before deletion
+    set "FOLDER_FILE_COUNT=0"
+    for /f %%C in ('dir /b /s /a-d "!FOLDER_PATH!" 2^>nul ^| find /c /v ""') do set "FOLDER_FILE_COUNT=%%C"
+
     echo.
     echo  %YELLOW%  Target: !FOLDER_PATH!%RESET%
+    echo  %WHITE%  Files : !FOLDER_FILE_COUNT! file(s)%RESET%
     call :safety_confirm
     if "!CONFIRMED!"=="0" (
         echo  %YELLOW%[!] Operation cancelled.%RESET%
@@ -371,6 +427,8 @@ goto :main
     )
 
     echo.
+    echo  %GREEN%[+] Overwriting file contents before deletion...%RESET%
+    call :wipe_folder "!FOLDER_PATH!"
     echo  %GREEN%[+] Recursively deleting files in: !FOLDER_PATH!%RESET%
     del /f /s /q "!FOLDER_PATH!\*" >nul 2>&1
 
@@ -392,6 +450,7 @@ goto :main
         echo.
         echo  %GREEN%[✓] Folder securely deleted: !FOLDER_PATH!%RESET%
         call :log_entry "SECURE_DELETE_FOLDER" "!FOLDER_PATH!"
+        set /a "SESSION_ACTIONS+=1"
         if "!CLI_MODE!"=="1" ( exit /b 0 )
     )
     echo.
@@ -406,6 +465,8 @@ goto :main
         call :print_banner
         echo.
         echo  %BOLD%%WHITE%[ Wipe Free Disk Space ]%RESET%
+        echo.
+        call :list_drives
         echo.
         echo  %WHITE%  Enter the drive letter you want to wipe free space on.%RESET%
         echo  %WHITE%  Example: C%RESET%
@@ -456,6 +517,7 @@ goto :main
     echo.
     echo  %GREEN%[✓] Free space wiped on drive !DRIVE_LETTER!:%RESET%
     call :log_entry "WIPE_FREE_SPACE" "!DRIVE_LETTER!:"
+    set /a "SESSION_ACTIONS+=1"
     echo.
     if "!CLI_MODE!"=="1" ( exit /b 0 )
     pause
@@ -523,6 +585,8 @@ goto :main
     )
 
     echo.
+    echo  %GREEN%[+] Overwriting file contents (zero-fill)...%RESET%
+    call :wipe_file "!FILE_PATH!"
     echo  %GREEN%[+] Deleting file...%RESET%
     del /f /q "!FILE_PATH!" >nul 2>&1
     if exist "!FILE_PATH!" (
@@ -540,6 +604,7 @@ goto :main
     echo.
     echo  %GREEN%[✓] Quick cleanup completed for: !FILE_PATH!%RESET%
     call :log_entry "QUICK_CLEANUP" "!FILE_PATH!"
+    set /a "SESSION_ACTIONS+=1"
     echo.
     if "!CLI_MODE!"=="1" ( exit /b 0 )
     pause
@@ -695,6 +760,7 @@ goto :main
         echo  %GREEN%    All sectors zeroed. All partitions removed.%RESET%
         echo  %GREEN%    The disk is now blank and unusable until re-initialised.%RESET%
         call :log_entry "FULL_DISK_WIPE_COMPLETE" "Disk !DISK_NUM!"
+        set /a "SESSION_ACTIONS+=1"
         if "!CLI_MODE!"=="1" ( exit /b 0 )
     ) else (
         echo.
@@ -725,6 +791,8 @@ goto :main
         echo.
         echo  %WHITE%  Tip: run this BEFORE Option 3 (Wipe Free Space) to ensure%RESET%
         echo  %WHITE%  VSS snapshots cannot be used to recover deleted files.%RESET%
+        echo.
+        call :list_drives
         echo.
         set /p "DRIVE_LETTER=  Drive letter (letter only, no colon): "
     ) else (
@@ -770,6 +838,7 @@ goto :main
     if "!VSS_RESULT!"=="0" (
         echo  %GREEN%[✓] All shadow copies deleted on !DRIVE_LETTER!:%RESET%
         call :log_entry "DELETE_VSS" "!DRIVE_LETTER!:"
+        set /a "SESSION_ACTIONS+=1"
         if "!CLI_MODE!"=="1" ( exit /b 0 )
     ) else (
         echo  %YELLOW%[!] No shadow copies found on !DRIVE_LETTER!:, or deletion encountered%RESET%
@@ -824,9 +893,43 @@ goto :main
 :exit_tool
     call :print_banner
     echo.
+    echo  %CYAN%  Session Summary%RESET%
+    echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
+    echo  %WHITE%  Session ID         : !SESSION_ID!%RESET%
+    echo  %WHITE%  User               : !RUN_USER!%RESET%
+    echo  %WHITE%  Host               : %COMPUTERNAME%%RESET%
+    echo  %WHITE%  Operations this run: !SESSION_ACTIONS!%RESET%
+    echo  %WHITE%  Audit log          : !LOGFILE!%RESET%
+    echo  %CYAN%  ─────────────────────────────────────────────────────────────%RESET%
+    echo.
     echo  %CYAN%  Thank you for using BitReaper. Stay secure.%RESET%
     echo.
-    call :log_entry "SESSION_END" "N/A"
-    timeout /t 2 /nobreak >nul
+    call :log_entry "SESSION_END" "Actions=!SESSION_ACTIONS!"
+    timeout /t 3 /nobreak >nul
     endlocal
+    exit /b 0
+
+:: ============================================================
+::  EXPORT LOG – copy audit log to a user-specified destination
+:: ============================================================
+:export_log
+    if "!CLI_ARG1!"=="" (
+        echo  %RED%[!] No destination path provided.%RESET%
+        echo  %RED%    Usage: bitreaper.bat /export-log ^<destination^>%RESET%
+        exit /b 1
+    )
+
+    if not exist "!LOGFILE!" (
+        echo  %YELLOW%[!] No audit log found to export.%RESET%
+        exit /b 0
+    )
+
+    copy /y "!LOGFILE!" "!CLI_ARG1!" >nul 2>&1
+    if errorlevel 1 (
+        echo  %RED%[!] Failed to export audit log to: !CLI_ARG1!%RESET%
+        exit /b 1
+    )
+
+    echo  %GREEN%[✓] Audit log exported to: !CLI_ARG1!%RESET%
+    call :log_entry "EXPORT_LOG" "!CLI_ARG1!"
     exit /b 0
